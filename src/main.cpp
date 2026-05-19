@@ -72,14 +72,14 @@ ADNS2083 OpticalX = ADNS2083(SCLK_X, SDIO_X);
 ADNS2083 OpticalY = ADNS2083(SCLK_Y, SDIO_Y);
 
 // ==========================================================================
-// 200 Hz Streaming State
+// 200 Hz Streaming State — µs-grade clock, absolute phase lock
 // ==========================================================================
 long xSum = 0;
 long ySum = 0;
 long zSum = 0;
 
-unsigned long millisPre = 0;
-const unsigned long MILLIS_FRM = 5; // 200 Hz = 5 ms epoch
+unsigned long microsPre = 0;
+const unsigned long MICROS_FRM = 5000; // 200 Hz = 5000 µs epoch
 
 // ==========================================================================
 // Photodiode ISR — T₀ Anchor (volatile, minimal)
@@ -122,6 +122,11 @@ const uint8_t CMD_BUF_SIZE = 16;
 char cmdBuf[CMD_BUF_SIZE];
 uint8_t cmdIdx = 0;
 bool cmdInside = false; // true after '<' seen, false after '>' or overflow
+
+inline bool isStimActive()
+{
+    return (valveState == STATE_FIRING);
+}
 
 void parseSerialPackets()
 {
@@ -193,6 +198,15 @@ void parseSerialPackets()
             }
             if (!validNum)
                 continue;
+
+            // ---- Pre-arm safety: force-close any active valve ----
+            // Prevents deadlock where a new command preempts an in-progress
+            // firing cycle, leaving the old coil indefinitely energised.
+            if (isStimActive())
+            {
+                digitalWrite(targetValvePin, LOW);
+                digitalWrite(PIN_TTL, LOW);
+            }
 
             // ---- Valid command: arm the state machine ----
             targetValvePin = valvePins[valveIdx];
@@ -304,14 +318,6 @@ void valveStateMachineTick(unsigned long now)
 }
 
 // ==========================================================================
-// Helper: is any valve currently energised?
-// ==========================================================================
-inline bool isStimActive()
-{
-    return (valveState == STATE_FIRING);
-}
-
-// ==========================================================================
 // setup()
 // ==========================================================================
 void setup()
@@ -337,8 +343,8 @@ void setup()
                     photodiodeISR, RISING);
 
     // Sensors already settled via begin() delay(1000) × 2.
-    // Start the 200 Hz epoch timer from now.
-    millisPre = millis();
+    // Anchor the 200 Hz epoch timer to current µs timestamp.
+    microsPre = micros();
 }
 
 // ==========================================================================
@@ -346,24 +352,29 @@ void setup()
 // ==========================================================================
 void loop()
 {
-    unsigned long millisNow = millis();
+    unsigned long millisNow = millis(); // for valve state machine (ms-resolution timers)
 
     // ==================================================================
     // 1. Non-blocking serial packet parser  (<DIR,DELAY_MS>)
+    //    Polled at peak MCU clock — unconstrained by epoch boundary.
     // ==================================================================
     parseSerialPackets();
 
     // ==================================================================
     // 2. Valve state machine tick (IDLE / ARMED / COUNTDOWN / FIRING)
+    //    Polled at peak MCU clock — unconstrained by epoch boundary.
     // ==================================================================
     valveStateMachineTick(millisNow);
 
     // ==================================================================
-    // 3. Unconditional 200 Hz streaming — never interrupted
+    // 3. 200 Hz streaming — µs absolute-phase-locked epoch
+    //    Bus offloading: single SPI read at epoch boundary only.
+    //    ADNS2083 hardware accumulates dx/dy between reads.
     // ==================================================================
-    if (millisNow - millisPre < MILLIS_FRM)
+    unsigned long microsNow = micros();
+    if (microsNow - microsPre >= MICROS_FRM)
     {
-        // Within epoch: accumulate optical flow
+        // --- Single-shot bus read: ADNS2083 registers hold accumulated motion ---
         if (OpticalX.motion())
         {
             xSum += OpticalX.dx();
@@ -373,11 +384,9 @@ void loop()
         {
             ySum += OpticalY.dx();
         }
-    }
-    else
-    {
-        // Epoch boundary → emit one data line
-        Serial.print(millisNow);
+
+        // --- Emit one data line (t_ard in millis for host parser compat) ---
+        Serial.print(millis());
         Serial.print(',');
         Serial.print(xSum);
         Serial.print(',');
@@ -387,7 +396,18 @@ void loop()
         Serial.print(',');
         Serial.println(isStimActive() ? 1 : 0);
 
+        // --- Reset accumulators ---
         xSum = ySum = zSum = 0;
-        millisPre = millisNow;
+
+        // --- Absolute phase advance (no relative reset) ---
+        // Anchors to the ideal time grid; serial/I²S jitter cannot drift the epoch.
+        microsPre += MICROS_FRM;
+
+        // --- Catch-up guard: if a single loop overrun consumed >1 epoch,
+        //     snap to now to avoid burst-firing multiple backlogged reads. ---
+        if (microsNow - microsPre >= MICROS_FRM)
+        {
+            microsPre = microsNow;
+        }
     }
 }
