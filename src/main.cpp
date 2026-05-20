@@ -47,6 +47,8 @@
     Pin 33  = SDIO Sensor Y
  -------------------------------------------------------------------------------------
 */
+#define MOCK_PHOTODIODE 1
+
 #include <Arduino.h>
 #include "ADNS2083.h"
 
@@ -105,6 +107,7 @@ enum ValveState : uint8_t
 };
 
 ValveState valveState = STATE_IDLE;
+unsigned long locked_t0 = 0;     // latched copy of t0_millis, immune to ISR re-entry
 int targetValvePin = -1;         // pin number of the armed valve
 uint16_t targetDelay = 0;        // 0–10000 ms delay after T₀
 unsigned long valveOpenTime = 0; // millis() when valve was energised
@@ -216,13 +219,11 @@ void parseSerialPackets()
             // Clear any stale T₀ flag so we only respond to the NEXT flash
             noInterrupts();
             t0_triggered = false;
-
-            // -----------------------------
-            // Debug without phodiode
+#ifdef MOCK_PHOTODIODE
+            // Simulate immediate T₀ — bypass hardware photodiode
             t0_triggered = true;
             t0_millis = millis();
-            // -----------------------------
-
+#endif
             interrupts();
 
             continue;
@@ -265,9 +266,10 @@ void valveStateMachineTick(unsigned long now)
         if (!fired)
             break; // Still waiting for flash
 
-        // T₀ received — clear flag, record timestamp
+        // T₀ received — latch timestamp, clear flag
         noInterrupts();
         t0_triggered = false;
+        locked_t0 = t0_millis;
         interrupts();
 
         if (targetDelay == 0)
@@ -288,12 +290,7 @@ void valveStateMachineTick(unsigned long now)
 
     case STATE_COUNTDOWN:
     {
-        unsigned long t0;
-        noInterrupts();
-        t0 = t0_millis;
-        interrupts();
-
-        if (now - t0 >= targetDelay)
+        if (now - locked_t0 >= targetDelay)
         {
             // Delay elapsed — fire valve
             valveState = STATE_FIRING;
