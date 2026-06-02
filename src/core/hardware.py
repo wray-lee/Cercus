@@ -62,15 +62,24 @@ class KinematicsParser:
             raw_dx = float(out[idx_map["dx"]])
             raw_dy = float(out[idx_map["dy"]])
             raw_dz = float(out[idx_map["dz"]])
-            # bandpass filter: reject micro-noise and optical spikes
-            # deadzone
-            if abs(raw_dx) < 6: raw_dx = 0.0
-            if abs(raw_dy) < 6: raw_dy = 0.0
-            if abs(raw_dz) < 6: raw_dz = 0.0
+
+            noise_floor = 0.5
+            if abs(raw_dx) < noise_floor:
+                raw_dx = 0.0
+            if abs(raw_dy) < noise_floor:
+                raw_dy = 0.0
+            if abs(raw_dz) < noise_floor:
+                raw_dz = 0.0
+
+            # Apply calibration matrix first (before deadzone) to avoid drift
             m = self._calib_matrix
-            out[idx_map["dx"]] = raw_dx * m[0][0] + raw_dy * m[0][1] + raw_dz * m[0][2]
-            out[idx_map["dy"]] = raw_dx * m[1][0] + raw_dy * m[1][1] + raw_dz * m[1][2]
-            out[idx_map["dz"]] = raw_dx * m[2][0] + raw_dy * m[2][1] + raw_dz * m[2][2]
+            real_dx = raw_dx * m[0][0] + raw_dy * m[0][1] + raw_dz * m[0][2]
+            real_dy = raw_dx * m[1][0] + raw_dy * m[1][1] + raw_dz * m[1][2]
+            real_dz = raw_dx * m[2][0] + raw_dy * m[2][1] + raw_dz * m[2][2]
+
+            out[idx_map["dx"]] = real_dx
+            out[idx_map["dy"]] = real_dy
+            out[idx_map["dz"]] = real_dz
         # Apply legacy scalar factors for non-dx/dy/dz fields
         for idx, (_, _, key) in enumerate(self._field_defs):
             if key in ("dx", "dy", "dz"):
