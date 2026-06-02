@@ -27,6 +27,8 @@ class KinematicsParser:
         self._field_defs = telemetry_schema or self._DEFAULT_SCHEMA
         self._calib_factors = calib_factors or {"dx": 1.0, "dy": 1.0, "dz": 1.0}
         self._calib_matrix = [row[:] for row in self._IDENTITY_MATRIX]
+        self._spatial_accum: dict[str, float] = {"dx": 0.0, "dy": 0.0, "dz": 0.0}
+        self._jitter_thresh: float = 1.5
 
     def get_headers(self) -> list:
         return ["sys_time"] + [h for _, _, h in self._field_defs] + ["global_trial_id"]
@@ -54,7 +56,7 @@ class KinematicsParser:
     def _apply_calibration(self, fields: list) -> list:
         out = list(fields)
         # Locate dx, dy, dz indices in the field definitions
-        idx_map = {}
+        idx_map: dict[str, int] = {}
         for idx, (_, _, key) in enumerate(self._field_defs):
             if key in ("dx", "dy", "dz"):
                 idx_map[key] = idx
@@ -63,19 +65,30 @@ class KinematicsParser:
             raw_dy = float(out[idx_map["dy"]])
             raw_dz = float(out[idx_map["dz"]])
 
-            noise_floor = 0.5
-            if abs(raw_dx) < noise_floor:
-                raw_dx = 0.0
-            if abs(raw_dy) < noise_floor:
-                raw_dy = 0.0
-            if abs(raw_dz) < noise_floor:
-                raw_dz = 0.0
+            # Spatial hysteresis accumulator: suppress sub-threshold jitter
+            # while preserving true displacement via frame-to-frame accumulation.
+            accum = self._spatial_accum
+            accum["dx"] += raw_dx
+            accum["dy"] += raw_dy
+            accum["dz"] += raw_dz
 
-            # Apply calibration matrix first (before deadzone) to avoid drift
-            m = self._calib_matrix
-            real_dx = raw_dx * m[0][0] + raw_dy * m[0][1] + raw_dz * m[0][2]
-            real_dy = raw_dx * m[1][0] + raw_dy * m[1][1] + raw_dz * m[1][2]
-            real_dz = raw_dx * m[2][0] + raw_dy * m[2][1] + raw_dz * m[2][2]
+            thresh = self._jitter_thresh
+            valid_dx: float = accum["dx"] if abs(accum["dx"]) >= thresh else 0.0
+            valid_dy: float = accum["dy"] if abs(accum["dy"]) >= thresh else 0.0
+            valid_dz: float = accum["dz"] if abs(accum["dz"]) >= thresh else 0.0
+
+            if valid_dx != 0.0:
+                accum["dx"] = 0.0
+            if valid_dy != 0.0:
+                accum["dy"] = 0.0
+            if valid_dz != 0.0:
+                accum["dz"] = 0.0
+
+            # Apply calibration decoupling matrix to validated displacements
+            m: list[list[float]] = self._calib_matrix
+            real_dx: float = valid_dx * m[0][0] + valid_dy * m[0][1] + valid_dz * m[0][2]
+            real_dy: float = valid_dx * m[1][0] + valid_dy * m[1][1] + valid_dz * m[1][2]
+            real_dz: float = valid_dx * m[2][0] + valid_dy * m[2][1] + valid_dz * m[2][2]
 
             out[idx_map["dx"]] = real_dx
             out[idx_map["dy"]] = real_dy
