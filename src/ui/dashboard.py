@@ -96,7 +96,7 @@ class CalibrationPanel:
         geo_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
         geo_frame.pack(fill="x", padx=6, pady=(0, 2))
         ctk.CTkLabel(geo_frame, text="Radius (mm):").pack(side="left")
-        self.radius_var = ctk.StringVar(value="60.0")
+        self.radius_var = ctk.StringVar(value="30.0")
         ctk.CTkEntry(geo_frame, textvariable=self.radius_var, width=70).pack(
             side="left", padx=(4, 0)
         )
