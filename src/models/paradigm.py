@@ -351,7 +351,7 @@ class LoomingParadigm(BaseParadigm):
             dir_char = "R" if wind_dir == "right" else "L"
             return f"<{dir_char},{delay_ms}>"
         elif trial_context["type"] == "baseline_wind":
-            self._baseline_delay = random.uniform(4.0, 6.0)
+            self._baseline_delay = random.uniform(0.1, 0.2)
             self._baseline_post = random.uniform(1.0, 2.0)
             wind_dir = trial_context.get("wind_dir", "none")
             if wind_dir != "none":
@@ -2003,7 +2003,7 @@ class SingleLoomingParadigm(BaseParadigm):
             dir_char = "R" if wind_dir == "right" else "L"
             return f"<{dir_char},{delay_ms}>"
         elif trial_context["type"] == "baseline_wind":
-            self._baseline_delay = random.uniform(4.0, 6.0)
+            self._baseline_delay = random.uniform(0.1, 0.2)
             self._baseline_post = random.uniform(1.0, 2.0)
             wind_dir = trial_context.get("wind_dir", "none")
             if wind_dir != "none":
