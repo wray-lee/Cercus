@@ -351,8 +351,15 @@ class LoomingParadigm(BaseParadigm):
             dir_char = "R" if wind_dir == "right" else "L"
             return f"<{dir_char},{delay_ms}>"
         elif trial_context["type"] == "baseline_wind":
-            self._baseline_delay = random.uniform(0.1, 0.2)
+            # 使用默认 looming 参数 (100ms, 2°) 计算等效静默期
+            lv_s = 100 / 1000.0
+            init_rad = math.radians(2.0 / 2)
+            t_col_s = lv_s / math.tan(init_rad) if math.tan(init_rad) != 0 else 0
+
+            # baseline_delay 严格对齐 looming 的前导时间 (约 5.72秒)
+            self._baseline_delay = t_col_s
             self._baseline_post = random.uniform(1.0, 2.0)
+
             wind_dir = trial_context.get("wind_dir", "none")
             if wind_dir != "none":
                 dir_char = "R" if wind_dir == "right" else "L"
@@ -2003,8 +2010,15 @@ class SingleLoomingParadigm(BaseParadigm):
             dir_char = "R" if wind_dir == "right" else "L"
             return f"<{dir_char},{delay_ms}>"
         elif trial_context["type"] == "baseline_wind":
-            self._baseline_delay = random.uniform(0.1, 0.2)
+            # 使用默认 looming 参数 (100ms, 2°) 计算等效静默期
+            lv_s = 100 / 1000.0
+            init_rad = math.radians(2.0 / 2)
+            t_col_s = lv_s / math.tan(init_rad) if math.tan(init_rad) != 0 else 0
+
+            # baseline_delay 严格对齐 looming 的前导时间 (约 5.72秒)
+            self._baseline_delay = t_col_s
             self._baseline_post = random.uniform(1.0, 2.0)
+
             wind_dir = trial_context.get("wind_dir", "none")
             if wind_dir != "none":
                 dir_char = "R" if wind_dir == "right" else "L"
