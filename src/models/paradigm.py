@@ -338,6 +338,8 @@ class LoomingParadigm(BaseParadigm):
         return trials
 
     def prepare_trial(self, trial_context: dict) -> str:
+        # 强制静默期：刺激结束后继续录制，确保数据窗口完整
+        self._post_delay = random.uniform(1.5, 2.5)
         if trial_context["type"] == "looming_wind":
             wind_dir = trial_context.get("wind_dir", "none")
             if wind_dir == "none":
@@ -433,9 +435,14 @@ class LoomingParadigm(BaseParadigm):
             t_col = lv_s / math.tan(init_rad) if math.tan(init_rad) != 0 else 0
 
             # 严格依据时间轴进行状态切片
-            if elapsed_time >= t_col + 1.0:
+            # 刺激结束后进入静默录制窗口（PostStimulus），确保数据采集完整
+            if elapsed_time >= t_col + 1.0 + self._post_delay:
                 is_done = True
-                phase = "PostLooming_End"
+                phase = "PostStimulus_End"
+            elif elapsed_time >= t_col + 1.0:
+                theta = self.init_deg
+                phase = "PostStimulus"
+                stim_active = 0
             elif elapsed_time >= t_col:
                 theta = self.max_deg
                 # 越过 TTC=0 瞬间，发射特征 Phase 触发 Worker 记录
@@ -449,8 +456,12 @@ class LoomingParadigm(BaseParadigm):
                 stim_active = 1
 
         elif t_type == "baseline_wind":
-            if elapsed_time >= (self._baseline_delay + self._baseline_post):
+            if elapsed_time >= (self._baseline_delay + self._baseline_post + self._post_delay):
                 is_done = True
+            elif elapsed_time >= (self._baseline_delay + self._baseline_post):
+                phase = "PostStimulus"
+                theta = self.init_deg
+                stim_active = 0
             else:
                 phase = "Baseline"
                 theta = self.init_deg
@@ -462,7 +473,7 @@ class LoomingParadigm(BaseParadigm):
             "lime"
             if phase == "Looming"
             else ("yellow" if phase == "Collision_TTC0"
-            else ("red" if phase == "PostLooming_End"
+            else ("gray" if phase in ("PostStimulus", "PostStimulus_End")
             else ("orange" if phase == "Baseline" else "cyan")))
         )
         radius_ratio = self._deg_to_pix(theta) / self.per_screen_w_px
@@ -620,6 +631,7 @@ class ClassicLoomingParadigm(BaseParadigm):
         return trials
 
     def prepare_trial(self, trial_context: dict) -> str:
+        self._post_delay = random.uniform(1.5, 2.5)
         return ""
 
     def _deg_to_pix(self, deg: float) -> float:
@@ -760,10 +772,15 @@ class ClassicLoomingParadigm(BaseParadigm):
         phase = "Trial"
 
         # 严格依据时间轴进行相变切片
-        if elapsed_time >= t_col + 1.0:
+        # 刺激结束后进入静默录制窗口（PostStimulus），确保数据采集完整
+        if elapsed_time >= t_col + 1.0 + self._post_delay:
             is_done = True
-            theta = final_deg
-            phase = "PostLooming_End"
+            theta = init_deg
+            phase = "PostStimulus_End"
+        elif elapsed_time >= t_col + 1.0:
+            theta = init_deg
+            phase = "PostStimulus"
+            stim_active = 0
         elif elapsed_time >= t_col:
             theta = final_deg
             phase = "Collision_TTC0"
@@ -775,7 +792,10 @@ class ClassicLoomingParadigm(BaseParadigm):
             stim_active = 1
 
         cmds = self._build_stimulus_commands(side, theta, bool(stim_active))
-        ui_color = "lime" if phase == "Looming" else "cyan"
+        ui_color = (
+            "lime" if phase == "Looming"
+            else ("gray" if phase in ("PostStimulus", "PostStimulus_End") else "cyan")
+        )
 
         tel = {
             "phase": phase,
@@ -935,6 +955,7 @@ class OpticFlowParadigm(BaseParadigm):
         ]
 
     def prepare_trial(self, trial_context: dict) -> str:
+        self._post_delay = random.uniform(1.5, 2.5)
         density = trial_context["density"]
         coherence = trial_context["coherence"]
         direction = trial_context["direction"]
@@ -1008,7 +1029,7 @@ class OpticFlowParadigm(BaseParadigm):
         speed = trial_context["speed"]
         density = trial_context["density"]
 
-        is_done = elapsed_time >= trial_context["trial_duration"]
+        is_done = elapsed_time >= trial_context["trial_duration"] + self._post_delay
 
         dt = elapsed_time - self._last_time
         if dt <= 0:
@@ -1227,6 +1248,7 @@ class MovementTraceParadigm(BaseParadigm):
         return [{"type": "movement_trace", "trial_idx": i} for i in range(n)]
 
     def prepare_trial(self, trial_context: dict) -> str:
+        self._post_delay = random.uniform(1.5, 2.5)
         self._t_accum = 0.0
         self._last_sin = 0.0
         self._trail_x = np.zeros(self.n_trail, dtype=np.float64)
@@ -1316,7 +1338,7 @@ class MovementTraceParadigm(BaseParadigm):
             *sync,
         ]
 
-        is_done = elapsed_time >= self.trial_duration
+        is_done = elapsed_time >= self.trial_duration + self._post_delay
 
         tel = {
             "phase": "MovementTrace",
@@ -1410,6 +1432,7 @@ class BlankParadigm(BaseParadigm):
         ]
 
     def prepare_trial(self, trial_context: dict) -> str:
+        self._post_delay = random.uniform(1.5, 2.5)
         return ""
 
     def _build_blank_bg(self) -> dict:
@@ -1440,7 +1463,7 @@ class BlankParadigm(BaseParadigm):
         self, elapsed_time: float, trial_context: dict, hw_telemetry: dict
     ) -> Tuple[bool, List[dict], dict]:
         self._frame_counter += 1
-        is_done = elapsed_time >= trial_context["trial_duration"]
+        is_done = elapsed_time >= trial_context["trial_duration"] + self._post_delay
 
         sync = self._build_sync_markers(True, "dual")
         tel = {
@@ -1602,6 +1625,7 @@ class GratingParadigm(BaseParadigm):
         ]
 
     def prepare_trial(self, trial_context: dict) -> str:
+        self._post_delay = random.uniform(1.5, 2.5)
         return ""
 
     def _deg_to_pix(self, deg: float) -> float:
@@ -1801,7 +1825,7 @@ class GratingParadigm(BaseParadigm):
         hw_telemetry: dict,
     ) -> Tuple[bool, List[dict], dict]:
         self._frame_counter += 1
-        is_done = elapsed_time >= trial_context["trial_duration"]
+        is_done = elapsed_time >= trial_context["trial_duration"] + self._post_delay
 
         tf = trial_context.get("tf", self.tf)
         dynamic_phase = (elapsed_time * tf) % 1.0
@@ -1997,6 +2021,8 @@ class SingleLoomingParadigm(BaseParadigm):
         return trials
 
     def prepare_trial(self, trial_context: dict) -> str:
+        # 强制静默期：刺激结束后继续录制，确保数据窗口完整
+        self._post_delay = random.uniform(1.5, 2.5)
         if trial_context["type"] == "looming_wind":
             wind_dir = trial_context.get("wind_dir", "none")
             if wind_dir == "none":
@@ -2078,9 +2104,15 @@ class SingleLoomingParadigm(BaseParadigm):
             init_rad = math.radians(self.init_deg / 2)
             t_col = lv_s / math.tan(init_rad) if math.tan(init_rad) != 0 else 0
 
-            if elapsed_time >= t_col + 1.0:
+            # 严格依据时间轴进行状态切片
+            # 刺激结束后进入静默录制窗口（PostStimulus），确保数据采集完整
+            if elapsed_time >= t_col + 1.0 + self._post_delay:
                 is_done = True
-                phase = "PostLooming_End"
+                phase = "PostStimulus_End"
+            elif elapsed_time >= t_col + 1.0:
+                theta = self.init_deg
+                phase = "PostStimulus"
+                stim_active = 0
             elif elapsed_time >= t_col:
                 theta = self.max_deg
                 phase = "Collision_TTC0"
@@ -2093,8 +2125,12 @@ class SingleLoomingParadigm(BaseParadigm):
                 stim_active = 1
 
         elif t_type == "baseline_wind":
-            if elapsed_time >= (self._baseline_delay + self._baseline_post):
+            if elapsed_time >= (self._baseline_delay + self._baseline_post + self._post_delay):
                 is_done = True
+            elif elapsed_time >= (self._baseline_delay + self._baseline_post):
+                phase = "PostStimulus"
+                theta = self.init_deg
+                stim_active = 0
             else:
                 phase = "Baseline"
                 theta = self.init_deg
@@ -2106,7 +2142,7 @@ class SingleLoomingParadigm(BaseParadigm):
             "lime"
             if phase == "Looming"
             else ("yellow" if phase == "Collision_TTC0"
-            else ("red" if phase == "PostLooming_End"
+            else ("gray" if phase in ("PostStimulus", "PostStimulus_End")
             else ("orange" if phase == "Baseline" else "cyan")))
         )
         radius_ratio = self._deg_to_pix(theta) / self.per_screen_w_px

@@ -14,6 +14,7 @@ from src.models.paradigm import PARADIGM_REGISTRY
 
 
 adaption_duration: float = 3.0  # seconds
+initial_baseline_dur: float = 2.0
 
 def create_ipc_queues():
     return mp.Queue(maxsize=32), mp.Queue(maxsize=256)
@@ -325,6 +326,23 @@ class GenericWorker:
                         raise ExperimentAbort()
                     if "space" in keys:
                         break
+
+            # --- Initial Baseline ---
+            # 全局前置基线采集：确保首个试次 TTC-6000ms 有充足的静止历史数据
+            self.kinematic_engine.reset()
+            t_baseline = clock.getTime()
+            logger.log_event("initial_baseline_start", t_baseline, duration=initial_baseline_dur)
+            while clock.getTime() - t_baseline < initial_baseline_dur:
+                self._sync_state()
+                hw_tel = self._drain_hardware(logger, hw_daemon)
+                if hw_daemon and not hw_daemon.is_alive():
+                    raise HardwareDisconnectError("Serial daemon died")
+                cmds, tel = self.paradigm.get_idle_frame(hw_tel)
+                tel["phase"] = "Initial Baseline"
+                tel["ui_color"] = "#4488ff"
+                self._present(renderer, cmds)
+                self._push_telemetry_debounced(0, 0, 0, tel, hw_tel=hw_tel)
+            logger.log_event("initial_baseline_end", clock.getTime())
 
             # --- Session loop ---
             s_idx = 0
