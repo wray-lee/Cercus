@@ -2164,6 +2164,167 @@ class SingleLoomingParadigm(BaseParadigm):
 
 
 # ---------------------------------------------------------------------------
+# Wind Paradigm (Pure wind stimulus, no visual)
+# ---------------------------------------------------------------------------
+
+
+class WindParadigm(BaseParadigm):
+    EXPERIMENT_PATTERNS = {
+        "Wind Only": "wind_only",
+    }
+
+    def __init__(self, debug_mode: bool = False, config: dict = None):
+        self.config = config or {}
+        self.min_delay = float(
+            self.config.get("Min Delay (s)", self._schema_default("Min Delay (s)"))
+        )
+        self.max_delay = float(
+            self.config.get("Max Delay (s)", self._schema_default("Max Delay (s)"))
+        )
+        self.wind_duration = 2.0  # fixed recording period after wind onset
+
+        screen_w_px = int(self.config.get("Screen Width (px)", 3840))
+        screen_h_px = int(self.config.get("Screen Height (px)", 1080))
+
+        self.screen_w = float(screen_w_px // 3 if debug_mode else screen_w_px)
+        self.screen_h = float(screen_h_px // 2 if debug_mode else screen_h_px)
+        self._win_w = self.screen_w
+        self._win_h = self.screen_h
+        self._frame_counter = 0
+
+    @classmethod
+    def get_available_patterns(cls) -> List[str]:
+        return list(cls.EXPERIMENT_PATTERNS.keys())
+
+    @classmethod
+    def get_parameter_schema(cls) -> Dict[str, Dict[str, Any]]:
+        return {
+            "Min Delay (s)": {
+                "type": "float",
+                "default": 0.05,
+                "min": 0.0,
+                "max": 60.0,
+                "label": "Min Delay (s)",
+            },
+            "Max Delay (s)": {
+                "type": "float",
+                "default": 0.20,
+                "min": 0.0,
+                "max": 60.0,
+                "label": "Max Delay (s)",
+            },
+            "Execution Mode": {
+                "type": "choice",
+                "default": "Auto",
+                "choices": ["Auto", "Manual", "Kinematic"],
+                "label": "Execution Mode",
+            },
+        }
+
+    @classmethod
+    def get_sync_channels(cls) -> List[str]:
+        return ["Trial Active", "Wind Onset"]
+
+    def generate_trials(self, pattern_key: str) -> List[Dict[str, Any]]:
+        sides = ["L"] * 9 + ["R"] * 9
+        random.shuffle(sides)
+        trials = []
+        for i, side in enumerate(sides):
+            delay_sec = random.uniform(self.min_delay, self.max_delay)
+            trials.append({
+                "type": "wind_only",
+                "trial_idx": i,
+                "side": side,
+                "delay_sec": delay_sec,
+            })
+        return trials
+
+    def prepare_trial(self, trial_context: dict) -> str:
+        self._wind_triggered = False
+        self._post_delay = random.uniform(1.5, 2.5)
+        return ""
+
+    def _build_blank_bg(self) -> dict:
+        return {
+            "id": "_bg",
+            "type": "rect",
+            "width": self.screen_w,
+            "height": self.screen_h,
+            "pos": (0, 0),
+            "fillColor": [0, 0, 0],
+            "lineColor": [0, 0, 0],
+        }
+
+    def get_idle_frame(self, hw_telemetry: dict) -> Tuple[List[dict], dict]:
+        sync = self._build_sync_markers(False, "dual")
+        tel = {
+            "phase": "Idle",
+            "hw_cmd": None,
+            "ui_color": "cyan",
+            "ui_metrics": {
+                **hw_telemetry,
+            },
+            "ui_twin": {
+                "side": "—",
+                "radius_ratio": 0.0,
+            },
+        }
+        return [self._build_blank_bg(), *sync], tel
+
+    def process_frame(
+        self, elapsed_time: float, trial_context: dict, hw_telemetry: dict
+    ) -> Tuple[bool, List[dict], dict]:
+        self._frame_counter += 1
+        delay_sec = trial_context["delay_sec"]
+        side = trial_context["side"]
+
+        hw_cmd = None
+        phase = "Waiting"
+
+        if not self._wind_triggered and elapsed_time >= delay_sec:
+            self._wind_triggered = True
+            self._wind_onset_time = elapsed_time
+            hw_cmd = f"<{side},0>"
+            phase = "Wind"
+        elif self._wind_triggered:
+            wind_elapsed = elapsed_time - self._wind_onset_time
+            if wind_elapsed >= self.wind_duration + self._post_delay:
+                phase = "PostWind_End"
+            elif wind_elapsed >= self.wind_duration:
+                phase = "PostWind"
+            else:
+                phase = "Wind"
+
+        is_done = (
+            self._wind_triggered
+            and (elapsed_time - self._wind_onset_time) >= self.wind_duration + self._post_delay
+        )
+
+        sync = self._build_sync_markers(True, "dual")
+        ui_color = (
+            "lime" if phase == "Wind"
+            else ("gray" if phase in ("PostWind", "PostWind_End") else "cyan")
+        )
+        twin_side = "left" if side == "L" else "right"
+        tel = {
+            "phase": phase,
+            "hw_cmd": hw_cmd,
+            "ui_color": ui_color,
+            "ui_metrics": {
+                "side": side,
+                "delay_sec": round(delay_sec, 3),
+                "wind_triggered": self._wind_triggered,
+                **hw_telemetry,
+            },
+            "ui_twin": {
+                "side": twin_side,
+                "radius_ratio": 1.0 if phase == "Wind" else 0.0,
+            },
+        }
+        return is_done, [self._build_blank_bg(), *sync], tel
+
+
+# ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 
@@ -2175,6 +2336,7 @@ PARADIGM_REGISTRY: Dict[str, type] = {
     "Blank": BlankParadigm,
     "Grating": GratingParadigm,
     "SingleLooming": SingleLoomingParadigm,
+    "Wind": WindParadigm,
 }
 
 
