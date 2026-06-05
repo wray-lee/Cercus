@@ -229,8 +229,8 @@ class LoomingParadigm(BaseParadigm):
         return {
             "Execution Mode": {
                 "type": "choice",
-                "default": "Auto",
-                "choices": ["Auto", "Manual", "Kinematic"],
+                "default": "Kinematic",
+                "choices": ["Kinematic", "Auto", "Manual"],
                 "label": "Execution Mode",
             },
             "Bezel Width (px)": {

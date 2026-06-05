@@ -1126,7 +1126,7 @@ class MasterDashboard:
             self._safe_int(res_parts[1], 1080) if len(res_parts) >= 2 else 1080
         )
 
-        exec_mode = paradigm_params.get("Execution Mode", "Auto")
+        exec_mode = paradigm_params.get("Execution Mode", "Kinematic")
         total_sessions = (
             -1
             if exec_mode == "Manual"
