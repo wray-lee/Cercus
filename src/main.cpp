@@ -13,7 +13,7 @@
             <3,1000>  → arm valve 3, fire 1000 ms after T₀
             <L,0>     → arm valve 0, fire immediately on T₀
 
-    2. Waits for a RISING-edge hardware interrupt on Pin 53 (photodiode).
+    2. Waits for a RISING-edge hardware interrupt on Pin 18 (photodiode).
        The ISR records T₀ = millis() and sets a flag.
 
     3. After T₀, counts down DELAY_MS using millis().  When elapsed,
@@ -40,7 +40,7 @@
     Pin 48  = Valve 5
     Pin 50  = Valve 6
     Pin 52  = Valve 7
-    Pin 53  = Photodiode interrupt input (RISING edge)
+    Pin 18  = Photodiode interrupt input (RISING edge)
     Pin  2  = SCLK Sensor X
     Pin  3  = SDIO Sensor X
     Pin 31  = SCLK Sensor Y
@@ -56,7 +56,7 @@
 // Pin Map
 // ==========================================================================
 const int PIN_TTL = 13;
-const int PIN_PHOTODIODE_INT = 53; // INT0 on Mega 2560
+const int PIN_PHOTODIODE_INT = 18; // INT0 on Mega 2560
 
 // Multi-channel valve array (pins 24 & 26 occupied by sensors → start at 28)
 const int totalValves = 8;
@@ -334,7 +334,7 @@ void setup()
         digitalWrite(valvePins[i], LOW);
     }
 
-    // Photodiode interrupt — RISING edge on Pin 53 (INT0)
+    // Photodiode interrupt — RISING edge on Pin 18 (INT0)
     pinMode(PIN_PHOTODIODE_INT, INPUT);
     attachInterrupt(digitalPinToInterrupt(PIN_PHOTODIODE_INT),
                     photodiodeISR, RISING);
