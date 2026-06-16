@@ -219,7 +219,7 @@ void parseSerialPackets()
             // Clear any stale T₀ flag so we only respond to the NEXT flash
             noInterrupts();
             t0_triggered = false;
-#ifdef MOCK_PHOTODIODE
+#if MOCK_PHOTODIODE
             // Simulate immediate T₀ — bypass hardware photodiode
             t0_triggered = true;
             t0_millis = millis();
