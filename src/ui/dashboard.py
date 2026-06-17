@@ -8,6 +8,9 @@ import threading
 import multiprocessing as mp
 from typing import Dict, Any, Optional, List
 import customtkinter as ctk
+from datetime import datetime
+
+time_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 try:
     import serial
@@ -21,8 +24,8 @@ from src.models.paradigm import PARADIGM_REGISTRY
 from src.workers.stimulus_worker import worker_entry, create_ipc_queues
 from src.workers.calibration_worker import calibration_worker_entry
 
-# ---- Pure-Python 3x3 matrix helpers (no numpy dependency) ----
 
+# ---- Pure-Python 3x3 matrix helpers (no numpy dependency) ----
 
 def _det3(m):
     return (
@@ -517,7 +520,17 @@ class MasterDashboard:
         self._load_default_config()
         self.refresh_dynamic_parameters()
         self.root.after(16, self._poll_telemetry)
-
+        
+    # ------------------------------------------------------------------
+    # Time Generator
+    # ------------------------------------------------------------------
+    def update_subject_with_current_time(self):
+        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        base_name = "cricket_001"
+        new_subject = f"{base_name}_{current_time}"
+        
+        self.subject_var.set(new_subject)
     # ------------------------------------------------------------------
     # Serial port helper
     # ------------------------------------------------------------------
@@ -588,10 +601,13 @@ class MasterDashboard:
         ctk.CTkLabel(cfg_frame, text="Subject ID:").grid(
             row=1, column=0, sticky="w", padx=10, pady=5
         )
-        self.subject_var = ctk.StringVar(value="cricket_001")
+        self.subject_var = ctk.StringVar(value=f"cricket_001_{time_stamp}")
         ctk.CTkEntry(cfg_frame, textvariable=self.subject_var).grid(
             row=1, column=1, sticky="w", padx=10, pady=5
         )
+        # New Subject ID Button
+        self.new_btn = ctk.CTkButton(cfg_frame, text="New Subject", command=self.update_subject_with_current_time)
+        self.new_btn.grid(row=1, column=2, sticky="w", padx=10, pady=5)
 
         # Row 2: Session
         ctk.CTkLabel(cfg_frame, text="Start Session / Total:").grid(
@@ -1134,7 +1150,7 @@ class MasterDashboard:
         )
 
         cfg: Dict[str, Any] = {
-            "Subject ID": self.subject_var.get().strip() or "cricket_001",
+            "Subject ID": self.subject_var.get().strip() or f"cricket_001_{time_stamp}",
             "Session Number": self._safe_int(self.session_start_var.get(), 1),
             "Total Sessions": total_sessions,
             "ITI Range (sec)": self.iti_range_var.get().strip() or "60-90",
