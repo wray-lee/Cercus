@@ -141,7 +141,7 @@ class LoomingParadigm(BaseParadigm):
         "Baseline Visual": {
             "type": "baseline_visual",
             "target_ttc_ms": None,
-            "lv_ratio_ms": 100,
+            "lv_ratio_ms": 120,
         },
         "Baseline Wind": {
             "type": "baseline_wind",
@@ -151,37 +151,37 @@ class LoomingParadigm(BaseParadigm):
         "Looming + Wind (TTC -373ms / 30°)": {
             "type": "looming_wind",
             "target_ttc_ms": -373,
-            "lv_ratio_ms": 100,
+            "lv_ratio_ms": 120,
         },
         "Looming + Wind (TTC -308ms / 36°)": {
             "type": "looming_wind",
             "target_ttc_ms": -308,
-            "lv_ratio_ms": 100,
+            "lv_ratio_ms": 120,
         },
         "Looming + Wind (TTC -261ms / 42°)": {
             "type": "looming_wind",
             "target_ttc_ms": -261,
-            "lv_ratio_ms": 100,
+            "lv_ratio_ms": 120,
         },
         "Looming + Wind (TTC -225ms / 48°)": {
             "type": "looming_wind",
             "target_ttc_ms": -225,
-            "lv_ratio_ms": 100,
+            "lv_ratio_ms": 120,
         },
         "Looming + Wind (TTC -119ms / 80°)": {
             "type": "looming_wind",
             "target_ttc_ms": -119,
-            "lv_ratio_ms": 100,
+            "lv_ratio_ms": 120,
         },
         "Looming + Wind (TTC 0ms / 180°)": {
             "type": "looming_wind",
             "target_ttc_ms": 0,
-            "lv_ratio_ms": 100,
+            "lv_ratio_ms": 120,
         },
         "Looming + Wind (TTC +200ms)": {
             "type": "looming_wind",
             "target_ttc_ms": 200,
-            "lv_ratio_ms": 100,
+            "lv_ratio_ms": 120,
         },
     }
 
