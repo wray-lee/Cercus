@@ -13,7 +13,7 @@ Begin Degree: 2°（as baseline on the same time）
 - Baseline **visual:** only visual
 - Baseline **Wind:** only wind
 
-**Looming（$l/v = 100$）(left & right)**
+**Looming（$l/v = 120$）(left & right)**
 
 - Wind（30°）：TTC -373ms
 - Wind（36°）：TTC -308ms
