@@ -1671,7 +1671,7 @@ class MasterDashboard:
         # Trajectory draw
         flat = []
         for px, py in self._trail_points:
-            flat.append(cx_canvas - (px - cx_phys) * scale)
+            flat.append(cx_canvas + (px - cx_phys) * scale)
             flat.append(cy_canvas + (py - cy_phys) * scale)
         canvas.create_line(*flat, fill="cyan", width=2)
 
