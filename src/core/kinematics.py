@@ -138,8 +138,10 @@ class KinematicEngine:
         self._cum_dz += math.degrees(dz / self._radius_mm)
         rad = math.radians(self._cum_dz)
         # 将体坐标系增量投影至全局坐标系
-        dx_glob = dx * math.cos(rad) + dy * math.sin(rad)
-        dy_glob = -dx * math.sin(rad) + dy * math.cos(rad)
+        dx_body = -dx
+        dy_body = -dy
+        dx_glob = dx_body * math.cos(rad) - dy_body * math.sin(rad)
+        dy_glob = dx_body * math.sin(rad) + dy_body * math.cos(rad)
         self._pos_x += dx_glob
         self._pos_y += dy_glob
         step_dist = math.sqrt(dx * dx + dy * dy)

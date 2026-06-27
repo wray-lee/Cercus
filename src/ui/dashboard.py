@@ -520,16 +520,16 @@ class MasterDashboard:
         self._load_default_config()
         self.refresh_dynamic_parameters()
         self.root.after(16, self._poll_telemetry)
-        
+
     # ------------------------------------------------------------------
     # Time Generator
     # ------------------------------------------------------------------
     def update_subject_with_current_time(self):
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
+
         base_name = "cricket_001"
         new_subject = f"{base_name}_{current_time}"
-        
+
         self.subject_var.set(new_subject)
     # ------------------------------------------------------------------
     # Serial port helper
@@ -1672,7 +1672,7 @@ class MasterDashboard:
         flat = []
         for px, py in self._trail_points:
             flat.append(cx_canvas + (px - cx_phys) * scale)
-            flat.append(cy_canvas + (py - cy_phys) * scale)
+            flat.append(cy_canvas - (py - cy_phys) * scale)
         canvas.create_line(*flat, fill="cyan", width=2)
 
         # Current position Arrow
@@ -1682,17 +1682,16 @@ class MasterDashboard:
         rad = math.radians(getattr(self, '_trail_last_angle', 0.0))
 
         # 物理坐标系下的向量 (Forward: dy=1, Right: dx=1)
-        phys_dir_x = math.sin(rad)
+        phys_dir_x = -math.sin(rad)
         phys_dir_y = math.cos(rad)
         phys_right_x = math.cos(rad)
-        phys_right_y = -math.sin(rad)
+        phys_right_y = math.sin(rad)
 
         # 映射到 Canvas UI 坐标系 (X轴反向，Y轴反向)
         canvas_dir_x = phys_dir_x
         canvas_dir_y = -phys_dir_y
         canvas_right_x = phys_right_x
         canvas_right_y = -phys_right_y
-
         # 箭头几何参数 (像素)
         L = 6  # 尖端长度
         B = 5  # 尾部向后长度
