@@ -28,7 +28,9 @@ class KinematicsParser:
         self._calib_factors = calib_factors or {"dx": 1.0, "dy": 1.0, "dz": 1.0}
         self._calib_matrix = [row[:] for row in self._IDENTITY_MATRIX]
         self._spatial_accum: dict[str, float] = {"dx": 0.0, "dy": 0.0, "dz": 0.0}
-        self._jitter_thresh: float = 1.5
+        # 防抖阈值
+        # self._jitter_thresh: float = 1.5
+        self._jitter_thresh: float = 0.0
 
     def get_headers(self) -> list:
         return ["sys_time"] + [h for _, _, h in self._field_defs] + ["global_trial_id"]
