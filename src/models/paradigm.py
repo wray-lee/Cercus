@@ -2201,14 +2201,14 @@ class WindParadigm(BaseParadigm):
         return {
             "Min Delay (s)": {
                 "type": "float",
-                "default": 0.05,
+                "default": 0.0,
                 "min": 0.0,
                 "max": 60.0,
                 "label": "Min Delay (s)",
             },
             "Max Delay (s)": {
                 "type": "float",
-                "default": 0.20,
+                "default": 0.0,
                 "min": 0.0,
                 "max": 60.0,
                 "label": "Max Delay (s)",
