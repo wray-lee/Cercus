@@ -79,6 +79,9 @@ ADNS2083 OpticalY = ADNS2083(SCLK_Y, SDIO_Y);
 long xSum = 0;
 long ySum = 0;
 long zSum = 0;
+long zX = 0;
+long zY = 0;
+bool zCalc = true;
 
 unsigned long microsPre = 0;
 const unsigned long MICROS_FRM = 5000; // 200 Hz = 5000 µs epoch
@@ -375,11 +378,23 @@ void loop()
         if (OpticalX.motion())
         {
             xSum += OpticalX.dx();
-            zSum += OpticalX.dy(); // 2nd axis of sensor X → Z-DOF
+            zX += OpticalX.dy(); // 2nd axis of sensor X → Z-DOF
         }
         if (OpticalY.motion())
         {
             ySum += OpticalY.dx();
+            zY += OpticalY.dy();
+        }
+
+        zCalc = abs(zX) > abs(zY) ? true : false; // max of the two Z-DOF axes
+
+        if (zCalc)
+        {
+            zSum += zX;
+        }
+        else
+        {
+            zSum += zY;
         }
 
         // --- Emit one data line (t_ard in millis for host parser compat) ---
@@ -395,6 +410,7 @@ void loop()
 
         // --- Reset accumulators ---
         xSum = ySum = zSum = 0;
+        zX = zY = 0;
 
         // --- Absolute phase advance (no relative reset) ---
         // Anchors to the ideal time grid; serial/I²S jitter cannot drift the epoch.
