@@ -663,7 +663,7 @@ class MasterDashboard:
         ctk.CTkLabel(cfg_frame, text="ISI Range (sec):").grid(
             row=5, column=2, sticky="w", padx=10, pady=5
         )
-        self.isi_range_var = ctk.StringVar(value="300-600")
+        self.isi_range_var = ctk.StringVar(value="300-300")
         ctk.CTkEntry(cfg_frame, textvariable=self.isi_range_var).grid(
             row=5, column=3, sticky="w", padx=10, pady=5
         )
@@ -1127,6 +1127,8 @@ class MasterDashboard:
                     paradigm_params[key] = var.get()
                 elif p_type == "choice":
                     paradigm_params[key] = var.get()
+                elif p_type == "string":
+                    paradigm_params[key] = var.get()
                 elif p_type == "range":
                     paradigm_params[key] = var.get()
                 elif p_type == "filepath":
@@ -1154,7 +1156,7 @@ class MasterDashboard:
             "Session Number": self._safe_int(self.session_start_var.get(), 1),
             "Total Sessions": total_sessions,
             "ITI Range (sec)": self.iti_range_var.get().strip() or "60-90",
-            "ISI Range (sec)": self.isi_range_var.get().strip() or "300-600",
+            "ISI Range (sec)": self.isi_range_var.get().strip() or "300-300",
             "Experiment Pattern": self.pattern_var.get(),
             "Paradigm Class": p_name,
             "Serial Port": self.serial_port_var.get().strip() or "mock",

@@ -18,10 +18,10 @@ Cercus enforces strict unidirectional data flow and functional isolation between
 
 ### Execution Modes
 
-| Mode | Behavior |
-|---|---|
-| **Auto** | Continuously executes the entire session automatically based on randomized ITI/ISI intervals. |
-| **Manual** | After the ITI, the renderer safely suspends and waits for external input (`Space` bar) to trigger a single trial. |
+| Mode          | Behavior                                                                                                                                                                   |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Auto**      | Continuously executes the entire session automatically based on randomized ITI/ISI intervals.                                                                              |
+| **Manual**    | After the ITI, the renderer safely suspends and waits for external input (`Space` bar) to trigger a single trial.                                                          |
 | **Kinematic** | The trial starts automatically once a kinematic trigger condition is met (e.g., movement distance, angle, or speed threshold). Thresholds are configured in the dashboard. |
 
 ## 2. Quick Start
@@ -42,15 +42,15 @@ python main.py
 
 The following paradigms are built-in and can be dynamically loaded via the dashboard dropdown:
 
-| Paradigm | Description |
-|---|---|
-| **Looming** | Multi-modal looming stimulus with visual + wind field. Includes pure visual and pure wind baselines, plus 7 calibrated visuo-tactile conditions with gradient wind triggers from TTC -373ms to +200ms. |
-| **ClassicLooming** | Pure visual parameterized looming model. Supports dynamic configuration of l/v ratio, initial/final degrees, and left/right presentation logic. |
-| **OpticFlow** | Vectorized dot-motion model. Configurable speed, density, coherence, and direction. |
-| **MovementTrace** | Lissajous trajectory tracking. Configurable X/Y frequency, amplitude, and trail length. |
-| **Grating** | Sinusoidal grating stimulus. Supports static and drifting modes with configurable spatial frequency, temporal frequency, orientation, and contrast. |
-| **SingleLooming** | Single-screen centered looming stimulus. Same multi-modal conditions as Looming but designed for single-display setups. |
-| **Blank** | No stimulus — hardware tracking only. Useful for baseline recordings. |
+| Paradigm           | Description                                                                                                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Looming**        | Multi-modal looming stimulus with visual + wind field. Includes pure visual and pure wind baselines, plus 7 calibrated visuo-tactile conditions with gradient wind triggers from TTC -373ms to +200ms. |
+| **ClassicLooming** | Pure visual parameterized looming model. Supports dynamic configuration of l/v ratio, initial/final degrees, and left/right presentation logic.                                                        |
+| **OpticFlow**      | Vectorized dot-motion model. Configurable speed, density, coherence, and direction.                                                                                                                    |
+| **MovementTrace**  | Lissajous trajectory tracking. Configurable X/Y frequency, amplitude, and trail length.                                                                                                                |
+| **Grating**        | Sinusoidal grating stimulus. Supports static and drifting modes with configurable spatial frequency, temporal frequency, orientation, and contrast.                                                    |
+| **SingleLooming**  | Single-screen centered looming stimulus. Same multi-modal conditions as Looming but designed for single-display setups.                                                                                |
+| **Blank**          | No stimulus — hardware tracking only. Useful for baseline recordings.                                                                                                                                  |
 
 ## 4. Physical Calibration
 
@@ -102,14 +102,14 @@ PARADIGM_REGISTRY: Dict[str, type] = {
 
 Open `src/ui/dashboard.py` and find the `_create_widgets` method. Search for the corresponding `ctk.StringVar(value="...")` and change the value string. Common examples:
 
-| Parameter | Line (approx.) | Current Default | Change To |
-|---|---|---|---|
-| Subject ID | `self.subject_var = ctk.StringVar(value="cricket_001")` | `"cricket_001"` | Your lab's subject ID |
-| Resolution | `self.resolution_var = ctk.StringVar(value="3840,1080")` | `"3840,1080"` | Your screen resolution (e.g. `"1920,1080"`) |
-| ITI Range | `self.iti_range_var = ctk.StringVar(value="60-90")` | `"60-90"` | Your inter-trial interval (e.g. `"30-45"`) |
-| ISI Range | `self.isi_range_var = ctk.StringVar(value="300-600")` | `"300-600"` | Your inter-session interval |
-| Viewing Distance | `self.viewing_distance_var = ctk.StringVar(value="30.0")` | `"30.0"` | Your viewing distance in cm |
-| Screen Width (cm) | `self.screen_width_cm_var = ctk.StringVar(value="53.0")` | `"53.0"` | Your screen physical width in cm |
+| Parameter         | Line (approx.)                                            | Current Default | Change To                                   |
+| ----------------- | --------------------------------------------------------- | --------------- | ------------------------------------------- |
+| Subject ID        | `self.subject_var = ctk.StringVar(value="cricket_001")`   | `"cricket_001"` | Your lab's subject ID                       |
+| Resolution        | `self.resolution_var = ctk.StringVar(value="3840,1080")`  | `"3840,1080"`   | Your screen resolution (e.g. `"1920,1080"`) |
+| ITI Range         | `self.iti_range_var = ctk.StringVar(value="60-90")`       | `"60-90"`       | Your inter-trial interval (e.g. `"30-45"`)  |
+| ISI Range         | `self.isi_range_var = ctk.StringVar(value="300-300")`     | `"300-300"`     | Your inter-session interval                 |
+| Viewing Distance  | `self.viewing_distance_var = ctk.StringVar(value="30.0")` | `"30.0"`        | Your viewing distance in cm                 |
+| Screen Width (cm) | `self.screen_width_cm_var = ctk.StringVar(value="53.0")`  | `"53.0"`        | Your screen physical width in cm            |
 
 ### Change paradigm-specific parameters (contrast, spatial frequency, speed, etc.)
 
@@ -199,11 +199,11 @@ def get_parameter_schema(cls) -> Dict[str, Dict[str, Any]]:
 
 The `cmds` list returned by lifecycle methods must use dictionaries with these supported `type` values:
 
-| Type | Key Parameters |
-|---|---|
-| `circle` | `radius`, `pos`, `fillColor`, `lineColor`, `lineWidth`, `edges` |
-| `rect` | `width`, `height`, `pos`, `fillColor`, `lineColor`, `lineWidth` |
-| `element_array` | `n_elements`, `xys`, `sizes`, `colors`, `opacities` |
+| Type            | Key Parameters                                                  |
+| --------------- | --------------------------------------------------------------- |
+| `circle`        | `radius`, `pos`, `fillColor`, `lineColor`, `lineWidth`, `edges` |
+| `rect`          | `width`, `height`, `pos`, `fillColor`, `lineColor`, `lineWidth` |
+| `element_array` | `n_elements`, `xys`, `sizes`, `colors`, `opacities`             |
 
 Color values use PsychoPy RGB convention: `-1` = black, `0` = mid-gray, `+1` = white.
 
@@ -231,10 +231,10 @@ The counter powers the flash toggle: `odd = self._frame_counter % 2 == 1`.
 
 **Rule 2 — Channel Physical Alignment**
 
-| Screen Mode | Block Count | Layout |
-|---|---|---|
-| **Dual (Surround)** | 4 | Left-bottom outer, left-bottom inner, right-bottom inner, right-bottom outer |
-| **Single** | 2 | Bottom-right corner: inner (trial state) + outer (frame flash), side-by-side |
+| Screen Mode         | Block Count | Layout                                                                       |
+| ------------------- | ----------- | ---------------------------------------------------------------------------- |
+| **Dual (Surround)** | 4           | Left-bottom outer, left-bottom inner, right-bottom inner, right-bottom outer |
+| **Single**          | 2           | Bottom-right corner: inner (trial state) + outer (frame flash), side-by-side |
 
 - **Dual-screen paradigms** must append 4 sync blocks: the outermost blocks flash with frame rate, the inner blocks stay solid to indicate trial activation state.
 - **Single-screen paradigms** must append exactly 2 sync blocks, both tightly placed in the bottom-right corner — the inner block shows trial state (solid), the outer block flashes with the frame rate.

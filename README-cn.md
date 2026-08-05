@@ -10,18 +10,18 @@
 
 Cercus 强制执行单向数据流与功能隔离，包含以下四个子系统：
 
-* **主控中枢** (`src/ui/dashboard.py`)：非阻塞 GUI，负责参数装配、动态表单生成与实时状态监控。
-* **纯逻辑计算核** (`src/models/paradigm.py`)：数学模型层。基于时间差与硬件反馈输出标准化渲染指令流。
-* **无状态渲染引擎** (`src/core/render.py`)：执行基础几何绘制指令（支持 `circle`, `rect`, `element_array` 等渲染类型），不维护状态。
-* **异步硬件驱动** (`src/core/hardware.py`)：处理高频传感器数据采集与触发信号下发。
-* **双轨数据记录** (`src/core/logger.py`)：分离高频运动学遥测数据与低频实验事件流。
+- **主控中枢** (`src/ui/dashboard.py`)：非阻塞 GUI，负责参数装配、动态表单生成与实时状态监控。
+- **纯逻辑计算核** (`src/models/paradigm.py`)：数学模型层。基于时间差与硬件反馈输出标准化渲染指令流。
+- **无状态渲染引擎** (`src/core/render.py`)：执行基础几何绘制指令（支持 `circle`, `rect`, `element_array` 等渲染类型），不维护状态。
+- **异步硬件驱动** (`src/core/hardware.py`)：处理高频传感器数据采集与触发信号下发。
+- **双轨数据记录** (`src/core/logger.py`)：分离高频运动学遥测数据与低频实验事件流。
 
 ### 执行模式
 
-| 模式 | 行为 |
-|---|---|
-| **Auto（自动）** | 基于设定的 ITI/ISI 区间全自动连续执行实验流程。 |
-| **Manual（手动）** | 在 ITI 结束后渲染进程安全挂起，等待外部按键（`Space`）精准触发单次试次。 |
+| 模式                        | 行为                                                                                          |
+| --------------------------- | --------------------------------------------------------------------------------------------- |
+| **Auto（自动）**            | 基于设定的 ITI/ISI 区间全自动连续执行实验流程。                                               |
+| **Manual（手动）**          | 在 ITI 结束后渲染进程安全挂起，等待外部按键（`Space`）精准触发单次试次。                      |
 | **Kinematic（运动学触发）** | 当运动学触发条件满足时（如移动距离、角度或速度阈值），试次自动启动。阈值在 Dashboard 中配置。 |
 
 ## 2. 环境安装与运行
@@ -42,15 +42,15 @@ python main.py
 
 以下范式已内置，可通过 Dashboard 下拉菜单动态装载：
 
-| 范式 | 说明 |
-|---|---|
-| **Looming（多模态逼近）** | 视觉 + 风场多模态逼近刺激。包含纯视觉与纯风场基线，以及 7 组从 TTC -373ms 到 +200ms 梯度风场标定的多感觉融合条件。 |
-| **ClassicLooming（经典视觉逼近）** | 纯视觉参数化逼近模型。支持动态配置碰撞比（l/v ratio）、起始/终止视角及左右呈现逻辑。 |
-| **OpticFlow（光流场）** | 矢量化粒子运动模型。支持配置速度、密度、相干性与运动方向。 |
-| **MovementTrace（运动轨迹）** | 利萨茹曲线轨迹跟踪。支持配置 X/Y 轴频率、振幅与拖影长度。 |
-| **Grating（光栅）** | 正弦光栅刺激。支持静态与漂移模式，可配置空间频率、时间频率、方向与对比度。 |
-| **SingleLooming（单屏逼近）** | 单屏居中逼近刺激。包含与 Looming 相同的多模态条件，适用于单显示器实验环境。 |
-| **Blank（空白）** | 无刺激 — 仅硬件追踪。用于基线记录。 |
+| 范式                               | 说明                                                                                                               |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Looming（多模态逼近）**          | 视觉 + 风场多模态逼近刺激。包含纯视觉与纯风场基线，以及 7 组从 TTC -373ms 到 +200ms 梯度风场标定的多感觉融合条件。 |
+| **ClassicLooming（经典视觉逼近）** | 纯视觉参数化逼近模型。支持动态配置碰撞比（l/v ratio）、起始/终止视角及左右呈现逻辑。                               |
+| **OpticFlow（光流场）**            | 矢量化粒子运动模型。支持配置速度、密度、相干性与运动方向。                                                         |
+| **MovementTrace（运动轨迹）**      | 利萨茹曲线轨迹跟踪。支持配置 X/Y 轴频率、振幅与拖影长度。                                                          |
+| **Grating（光栅）**                | 正弦光栅刺激。支持静态与漂移模式，可配置空间频率、时间频率、方向与对比度。                                         |
+| **SingleLooming（单屏逼近）**      | 单屏居中逼近刺激。包含与 Looming 相同的多模态条件，适用于单显示器实验环境。                                        |
+| **Blank（空白）**                  | 无刺激 — 仅硬件追踪。用于基线记录。                                                                                |
 
 ## 4. 物理空间校准
 
@@ -102,14 +102,14 @@ PARADIGM_REGISTRY: Dict[str, type] = {
 
 打开 `src/ui/dashboard.py`，在 `_create_widgets` 方法中搜索对应的 `ctk.StringVar(value="...")`，直接修改 value 字符串。常见示例：
 
-| 参数 | 位置（约） | 当前默认值 | 修改为 |
-|---|---|---|---|
-| 被试 ID | `self.subject_var = ctk.StringVar(value="cricket_001")` | `"cricket_001"` | 您实验室的被试 ID |
-| 分辨率 | `self.resolution_var = ctk.StringVar(value="3840,1080")` | `"3840,1080"` | 您的屏幕分辨率（如 `"1920,1080"`） |
-| ITI 范围 | `self.iti_range_var = ctk.StringVar(value="60-90")` | `"60-90"` | 您的试次间隔（如 `"30-45"`） |
-| ISI 范围 | `self.isi_range_var = ctk.StringVar(value="300-600")` | `"300-600"` | 您的会话间隔 |
-| 观看距离 | `self.viewing_distance_var = ctk.StringVar(value="30.0")` | `"30.0"` | 您的观看距离（cm） |
-| 屏幕宽度 (cm) | `self.screen_width_cm_var = ctk.StringVar(value="53.0")` | `"53.0"` | 您的屏幕物理宽度（cm） |
+| 参数          | 位置（约）                                                | 当前默认值      | 修改为                             |
+| ------------- | --------------------------------------------------------- | --------------- | ---------------------------------- |
+| 被试 ID       | `self.subject_var = ctk.StringVar(value="cricket_001")`   | `"cricket_001"` | 您实验室的被试 ID                  |
+| 分辨率        | `self.resolution_var = ctk.StringVar(value="3840,1080")`  | `"3840,1080"`   | 您的屏幕分辨率（如 `"1920,1080"`） |
+| ITI 范围      | `self.iti_range_var = ctk.StringVar(value="60-90")`       | `"60-90"`       | 您的试次间隔（如 `"30-45"`）       |
+| ISI 范围      | `self.isi_range_var = ctk.StringVar(value="300-300")`     | `"300-300"`     | 您的会话间隔                       |
+| 观看距离      | `self.viewing_distance_var = ctk.StringVar(value="30.0")` | `"30.0"`        | 您的观看距离（cm）                 |
+| 屏幕宽度 (cm) | `self.screen_width_cm_var = ctk.StringVar(value="53.0")`  | `"53.0"`        | 您的屏幕物理宽度（cm）             |
 
 ### 修改范式专属参数（对比度、空间频率、运动速度等）
 
@@ -155,7 +155,7 @@ class MyParadigm(BaseParadigm):
 
 ### 步骤 2：定义前端映射接口
 
-* **`get_available_patterns(cls)`**：返回该范式支持的具体模式名称列表（显示在 Dashboard 的 Pattern 下拉菜单中）。
+- **`get_available_patterns(cls)`**：返回该范式支持的具体模式名称列表（显示在 Dashboard 的 Pattern 下拉菜单中）。
 
 ```python
 @classmethod
@@ -163,7 +163,7 @@ def get_available_patterns(cls) -> List[str]:
     return ["My Pattern A", "My Pattern B"]
 ```
 
-* **`get_parameter_schema(cls)`**：声明动态 UI 参数配置字典。框架依据字典中的 `type` 字段自动渲染主控表单。支持的类型：`int`、`float`、`str`、`choice`、`bool`、`info`、`filepath`。
+- **`get_parameter_schema(cls)`**：声明动态 UI 参数配置字典。框架依据字典中的 `type` 字段自动渲染主控表单。支持的类型：`int`、`float`、`str`、`choice`、`bool`、`info`、`filepath`。
 
 ```python
 @classmethod
@@ -187,23 +187,23 @@ def get_parameter_schema(cls) -> Dict[str, Dict[str, Any]]:
 
 ### 步骤 3：实现核心生命周期
 
-* **`generate_trials(self, pattern_key)`**：根据用户选择的模式，构建并返回当前 Session 的全体试次上下文配置（`List[dict]`）。
+- **`generate_trials(self, pattern_key)`**：根据用户选择的模式，构建并返回当前 Session 的全体试次上下文配置（`List[dict]`）。
 
-* **`prepare_trial(self, trial_context)`**：返回当前试次开始前需下发至硬件的初始化串口指令（如无则返回空字符串 `""`）。
+- **`prepare_trial(self, trial_context)`**：返回当前试次开始前需下发至硬件的初始化串口指令（如无则返回空字符串 `""`）。
 
-* **`get_idle_frame(self, hw_telemetry)`**：输出 ITI/ISI 等空闲阶段的稳态渲染指令，需返回元组 `(cmds, telemetry_dict, sync_states)`。
+- **`get_idle_frame(self, hw_telemetry)`**：输出 ITI/ISI 等空闲阶段的稳态渲染指令，需返回元组 `(cmds, telemetry_dict, sync_states)`。
 
-* **`process_frame(self, elapsed_time, trial_context, hw_telemetry)`**：帧级闭环计算核心。根据当前时间戳与硬件遥测输入完成坐标更新，返回帧状态元组 `(is_done, cmds, telemetry_dict, sync_states)`。
+- **`process_frame(self, elapsed_time, trial_context, hw_telemetry)`**：帧级闭环计算核心。根据当前时间戳与硬件遥测输入完成坐标更新，返回帧状态元组 `(is_done, cmds, telemetry_dict, sync_states)`。
 
 ### 步骤 4：返回标准渲染指令
 
 上述生命周期中返回的 `cmds` 列表需使用以下支持的 `type` 字典：
 
-| 类型 | 关键参数 |
-|---|---|
-| `circle` | `radius`, `pos`, `fillColor`, `lineColor`, `lineWidth`, `edges` |
-| `rect` | `width`, `height`, `pos`, `fillColor`, `lineColor`, `lineWidth` |
-| `element_array` | `n_elements`, `xys`, `sizes`, `colors`, `opacities` |
+| 类型            | 关键参数                                                        |
+| --------------- | --------------------------------------------------------------- |
+| `circle`        | `radius`, `pos`, `fillColor`, `lineColor`, `lineWidth`, `edges` |
+| `rect`          | `width`, `height`, `pos`, `fillColor`, `lineColor`, `lineWidth` |
+| `element_array` | `n_elements`, `xys`, `sizes`, `colors`, `opacities`             |
 
 色彩空间采用 PsychoPy RGB 约定：`-1` = 纯黑，`0` = 中灰，`+1` = 纯白。
 
@@ -231,10 +231,10 @@ def process_frame(self, elapsed_time, trial_context, hw_telemetry):
 
 **规范二：通道物理对齐**
 
-| 屏幕模式 | 色块数量 | 布局 |
-|---|---|---|
-| **双屏（Surround）** | 4 | 左下外侧、左下内侧、右下内侧、右下外侧 |
-| **单屏（Single）** | 2 | 右下角：内侧（试次状态）+ 外侧（帧率闪烁），紧凑并排 |
+| 屏幕模式             | 色块数量 | 布局                                                 |
+| -------------------- | -------- | ---------------------------------------------------- |
+| **双屏（Surround）** | 4        | 左下外侧、左下内侧、右下内侧、右下外侧               |
+| **单屏（Single）**   | 2        | 右下角：内侧（试次状态）+ 外侧（帧率闪烁），紧凑并排 |
 
 - **双屏范式**必须在 `cmds` 末尾追加 4 个同步色块：最外侧色块随帧闪烁指示帧率，内侧色块常亮指示试次激活状态。
 - **单屏范式**必须在 `cmds` 末尾追加恰好 2 个同步色块，**两个色块必须紧凑并排放置在屏幕的同一角落（右下角）**，内侧色块常亮指示试次状态，外侧色块随帧闪烁指示帧率。

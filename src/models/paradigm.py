@@ -233,6 +233,18 @@ class LoomingParadigm(BaseParadigm):
                 "choices": ["Kinematic", "Auto", "Manual"],
                 "label": "Execution Mode",
             },
+            "Number of Repetitions": {
+                "type": "int",
+                "default": 9,
+                "min": 1,
+                "max": 9999,
+                "label": "Number of Repetitions",
+            },
+            "Random Seed": {
+                "type": "string",
+                "default": "42",
+                "label": "Random Seed",
+            },
             "Bezel Width (px)": {
                 "type": "int",
                 "default": 0,
@@ -322,8 +334,24 @@ class LoomingParadigm(BaseParadigm):
 
     def generate_trials(self, pattern_key: str) -> List[Dict[str, Any]]:
         p = self.EXPERIMENT_PATTERNS[pattern_key]
+
+        # 固定随机种子：若配置包含 Random Seed，则打乱顺序可复现
+        if "Random Seed" in self.config:
+            self._apply_random_seed(self.config)
+
+        reps = max(1, int(self.config.get("Number of Repetitions", 9)))
+        directions = ["left"] * reps + ["right"] * reps
+
+        # 约束随机化：重排直到任意一侧连续出现不超过 2 次（禁止 LLL/RRR 聚集）
+        attempts = 0
+        while attempts < 1000:
+            random.shuffle(directions)
+            attempts += 1
+            if self._max_consecutive(directions) <= 2:
+                break
+
         trials = []
-        for direction in ["left"] * 9 + ["right"] * 9:
+        for direction in directions:
             d = {
                 "type": p["type"],
                 "target_ttc_ms": p["target_ttc_ms"],
@@ -334,8 +362,19 @@ class LoomingParadigm(BaseParadigm):
             else:
                 d["wind_dir"], d["screen_side"] = direction, direction
             trials.append(d)
-        random.shuffle(trials)
         return trials
+
+    @staticmethod
+    def _max_consecutive(directions: List[str]) -> int:
+        """Return the length of the longest run of identical directions."""
+        best = 0
+        run = 0
+        prev = None
+        for d in directions:
+            run = run + 1 if d == prev else 1
+            best = max(best, run)
+            prev = d
+        return best
 
     def prepare_trial(self, trial_context: dict) -> str:
         # 强制静默期：刺激结束后继续录制，确保数据窗口完整
