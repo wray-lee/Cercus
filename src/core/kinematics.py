@@ -133,9 +133,22 @@ class KinematicEngine:
                 self._error_cb("data_anomaly", "non-finite telemetry value", (t, dx, dy, dz))
             return
 
+        # --- per-frame spike guard (rejects single-frame outliers) ---
+        # Serial glitches occasionally deliver dz/dx/dy magnitudes far beyond
+        # physically possible per-frame motion. One such sample must not
+        # corrupt the accumulated heading/position — previously a dz of ~500mm
+        # added ~1900° to cum_dz in a single frame and shifted every later pos.
+        d_theta = math.degrees(dz / self._radius_mm)
+        if abs(d_theta) > 30.0 or abs(dx) > 20.0 or abs(dy) > 20.0:
+            if self._error_cb:
+                self._error_cb("data_anomaly", "out-of-range telemetry sample", (t, dx, dy, dz))
+            return
+
         # --- spatial accumulation (unconditional — timing cannot block this) ---
-        # dz is arc length (mm) on 30mm radius sphere → convert to degrees
-        self._cum_dz += math.degrees(dz / self._radius_mm)
+        # dz is arc length (mm) on 30mm radius sphere → convert to degrees.
+        # Rotate this frame's displacement by the *previous* heading first,
+        # then advance the heading. Using the freshly-updated angle would
+        # rotate the displacement by the very turn applied this same frame.
         rad = math.radians(self._cum_dz)
         # 将体坐标系增量投影至全局坐标系
         dx_body = -dx
@@ -144,6 +157,7 @@ class KinematicEngine:
         dy_glob = dx_body * math.sin(rad) + dy_body * math.cos(rad)
         self._pos_x += dx_glob
         self._pos_y += dy_glob
+        self._cum_dz += d_theta
         step_dist = math.sqrt(dx * dx + dy * dy)
         if self._ready:
             self._cum_disp += step_dist

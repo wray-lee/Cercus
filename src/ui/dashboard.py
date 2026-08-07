@@ -473,6 +473,10 @@ class CalibrationPanel:
 
 
 class MasterDashboard:
+    # Max jump between consecutive trajectory points (mm) before the sample is
+    # treated as an outlier and the trail is reset. Configurable.
+    TRAIL_JUMP_MM = 50.0
+
     def __init__(self, root: ctk.CTk):
         self.root = root
         self.root.title("Cercus - Experiment Controller")
@@ -1610,20 +1614,24 @@ class MasterDashboard:
         px = ui_metrics.get("pos_x")
         py = ui_metrics.get("pos_y")
         if px is not None and py is not None:
-            self._trail_points.append((float(px), float(py)))
+            new_pt = (float(px), float(py))
+            # Distance gate — a single glitchy point far from the previous one
+            # must not produce a line that shoots off-screen. Drop the sample
+            # and restart the trail instead of connecting to the outlier.
+            if self._trail_points:
+                lx, ly = self._trail_points[-1]
+                if math.hypot(new_pt[0] - lx, new_pt[1] - ly) > self.TRAIL_JUMP_MM:
+                    self._reset_trajectory()
+                    return  # discard the outlier point
+            self._trail_points.append(new_pt)
             self._trail_points = self._trail_points[-1000:]
-            if len(self._trail_points) == 1:
-                self._trail_min_x = self._trail_max_x = float(px)
-                self._trail_min_y = self._trail_max_y = float(py)
-            else:
-                if float(px) < self._trail_min_x:
-                    self._trail_min_x = float(px)
-                elif float(px) > self._trail_max_x:
-                    self._trail_max_x = float(px)
-                if float(py) < self._trail_min_y:
-                    self._trail_min_y = float(py)
-                elif float(py) > self._trail_max_y:
-                    self._trail_max_y = float(py)
+            # Recompute the bounding box from the (possibly truncated) trail —
+            # incremental min/max goes stale once extreme points fall off the
+            # window, which would leave the plot incorrectly zoomed out.
+            self._trail_min_x = min(p[0] for p in self._trail_points)
+            self._trail_max_x = max(p[0] for p in self._trail_points)
+            self._trail_min_y = min(p[1] for p in self._trail_points)
+            self._trail_max_y = max(p[1] for p in self._trail_points)
             self._draw_trajectory()
 
         try:
