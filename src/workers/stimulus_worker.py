@@ -15,6 +15,7 @@ from src.models.paradigm import PARADIGM_REGISTRY
 
 adaption_duration: float = 3.0  # seconds
 initial_baseline_dur: float = 2.0
+ABORT_KEY = "0"
 
 def create_ipc_queues():
     return mp.Queue(maxsize=32), mp.Queue(maxsize=256)
@@ -245,7 +246,7 @@ class GenericWorker:
                 hw_daemon.start(time_func=clock.getTime)
 
             self.event.globalKeys.add(
-                key="escape", func=lambda: setattr(self, "abort_flag", True)
+                key=ABORT_KEY, func=lambda: setattr(self, "abort_flag", True)
             )
             logger = GroundTruthLogger(self.config.get("_output_dir", "."))
             logger.log_event("session_config", clock.getTime(), seed=self.config.get("Random Seed"))
@@ -320,8 +321,8 @@ class GenericWorker:
                     self._push_telemetry_debounced(0, 0, 0, tel, hw_tel=hw_tel)
 
                     all_keys = self.event.getKeys()
-                    keys = [k for k in all_keys if k in ["space", "escape"]]
-                    if "escape" in keys:
+                    keys = [k for k in all_keys if k in ["space", ABORT_KEY]]
+                    if ABORT_KEY in keys:
                         self.abort_flag = True
                         raise ExperimentAbort()
                     if "space" in keys:
@@ -422,8 +423,8 @@ class GenericWorker:
                             )
 
                             all_keys = self.event.getKeys()
-                            keys = [k for k in all_keys if k in ["space", "escape"]]
-                            if "escape" in keys:
+                            keys = [k for k in all_keys if k in ["space", ABORT_KEY]]
+                            if ABORT_KEY in keys:
                                 self.abort_flag = True
                                 raise ExperimentAbort()
                             if "space" in keys:
@@ -462,7 +463,7 @@ class GenericWorker:
                             )
 
                             all_keys = self.event.getKeys()
-                            if "escape" in all_keys:
+                            if ABORT_KEY in all_keys:
                                 self.abort_flag = True
                                 raise ExperimentAbort()
 
