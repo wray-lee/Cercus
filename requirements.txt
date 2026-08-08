@@ -2,3 +2,6 @@ customtkinter
 numpy
 psychopy
 pyserial
+fastapi
+uvicorn
+websockets
