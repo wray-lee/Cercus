@@ -23,6 +23,12 @@ except ImportError:
 from src.models.paradigm import PARADIGM_REGISTRY
 from src.workers.stimulus_worker import worker_entry, create_ipc_queues
 from src.workers.calibration_worker import calibration_worker_entry
+from src.core.web_telemetry import (
+    DEFAULT_PORT,
+    find_free_port,
+    local_web_url,
+    web_telemetry_entry,
+)
 
 
 # ---- Pure-Python 3x3 matrix helpers (no numpy dependency) ----
@@ -506,6 +512,15 @@ class MasterDashboard:
         self.calib_cmd_queue: Optional[mp.Queue] = None
         self.calib_telemetry_queue: Optional[mp.Queue] = None
 
+        # Web mirror process (pure-stdlib server, see src/core/web_telemetry.py)
+        self.web_proc: Optional[mp.Process] = None
+        self.web_state_q: Optional[mp.Queue] = None
+        self._web_url: str = ""
+        self._web_state_last_push: float = 0.0
+        self._last_telemetry: Optional[Dict[str, Any]] = None
+        self._last_ui_twin: Any = None
+        self._calib_raw: Dict[str, Any] = {"dx": 0, "dy": 0, "dz": 0}
+
         self._param_vars: Dict[str, ctk.StringVar] = {}
         self._param_widgets: List[ctk.CTkBaseClass] = []
         self._trigger_interlocks: List[tuple] = []
@@ -524,6 +539,7 @@ class MasterDashboard:
         self._load_default_config()
         self.refresh_dynamic_parameters()
         self.root.after(16, self._poll_telemetry)
+        self._start_web_server()
 
     # ------------------------------------------------------------------
     # Time Generator
@@ -555,6 +571,214 @@ class MasterDashboard:
                 seen.add(p)
                 result.append(p)
         return result
+
+    # ------------------------------------------------------------------
+    # Web mirror (real-time browser dashboard, see src/core/web_telemetry.py)
+    # ------------------------------------------------------------------
+    def _set_status(self, text: str, color: str = "white"):
+        """Update the status label, keeping the web mirror URL visible."""
+        if self._web_url:
+            text = f"{text}   |   Web: {self._web_url}"
+        self.status_label.configure(text=text, text_color=color)
+
+    def _start_web_server(self):
+        if self.web_proc and self.web_proc.is_alive():
+            return
+        self._close_web_queue()
+        self.web_state_q = mp.Queue(maxsize=8)
+        port = find_free_port(DEFAULT_PORT)
+        self.web_proc = mp.Process(
+            target=web_telemetry_entry,
+            args=(self.web_state_q, port),
+            daemon=True,
+        )
+        self.web_proc.start()
+        self._web_url = local_web_url(port)
+        self._set_status("Ready")
+
+    def _ensure_web_running(self):
+        if not (self.web_proc and self.web_proc.is_alive()):
+            self._start_web_server()
+
+    def _close_web_queue(self):
+        q = self.web_state_q
+        if q is not None:
+            try:
+                q.cancel_join_thread()
+            except (OSError, ValueError):
+                pass
+            try:
+                q.close()
+            except (OSError, ValueError):
+                pass
+            self.web_state_q = None
+
+    def _build_web_state(self) -> dict:
+        """FullState snapshot mirroring every visible dashboard value."""
+        p_name = self.paradigm_var.get()
+        p_cls = PARADIGM_REGISTRY.get(p_name)
+        schema = p_cls.get_parameter_schema() if p_cls else {}
+        pv = self._param_vars
+
+        params: list = []
+        for key, meta in schema.items():
+            p_type = meta.get("type", "info")
+            entry = {
+                "key": key,
+                "type": p_type,
+                "label": meta.get("label", key),
+                "value": pv[key].get() if key in pv else meta.get("default"),
+            }
+            if meta.get("choices"):
+                entry["choices"] = meta["choices"]
+            if meta.get("min") is not None:
+                entry["min"] = meta["min"]
+            if meta.get("max") is not None:
+                entry["max"] = meta["max"]
+            params.append(entry)
+
+        # Kinematic trigger params (present only when Execution Mode is Kinematic)
+        for key in (
+            "Trigger Duration (ms)",
+            "Trigger Dist (mm)",
+            "Trigger Angle (°)",
+            "Trigger Speed (units/s)",
+        ):
+            if key in pv:
+                params.append(
+                    {"key": key, "type": "float", "label": key, "value": pv[key].get()}
+                )
+                en_key = f"{key} Enabled"
+                if en_key in pv:
+                    params.append(
+                        {
+                            "key": en_key,
+                            "type": "bool",
+                            "label": en_key,
+                            "value": bool(pv[en_key].get()),
+                        }
+                    )
+
+        exec_mode = pv["Execution Mode"].get() if "Execution Mode" in pv else "Auto"
+        res_parts = [p.strip() for p in self.resolution_var.get().split(",")]
+        config: dict = {
+            "Paradigm": p_name,
+            "Pattern": self.pattern_var.get(),
+            "Subject ID": self.subject_var.get(),
+            "Session Start": self._safe_int(self.session_start_var.get(), 1),
+            "Viewing Distance (cm)": self._safe_float(
+                self.viewing_distance_var.get(), 30.0
+            ),
+            "Screen Width (cm)": self._safe_float(self.screen_width_cm_var.get(), 53.0),
+            "Resolution W": self._safe_int(res_parts[0], 3840) if res_parts else 3840,
+            "Resolution H": self._safe_int(res_parts[1], 1080)
+            if len(res_parts) > 1
+            else 1080,
+            "ITI Range (sec)": self.iti_range_var.get(),
+            "ISI Range (sec)": self.isi_range_var.get(),
+            "Serial Port": self.serial_port_var.get(),
+            "Screen ID": self._safe_int(self.screen_id_var.get(), 1),
+            "Debug Mode": bool(self.debug_var.get()),
+            "Execution Mode": exec_mode,
+            "params": params,
+        }
+        if exec_mode != "Manual":  # Total Sessions is hidden in Manual mode
+            config["Session Total"] = self._safe_int(self.session_total_var.get(), 2)
+
+        cal = self._calib_panel
+        matrix: list = []
+        for r in range(3):
+            row: list = []
+            for c in range(3):
+                try:
+                    row.append(float(cal._matrix_vars[r][c].get()))
+                except (ValueError, IndexError):
+                    row.append(0.0)
+            matrix.append(row)
+
+        calibration = {
+            "is_active": bool(cal._calib_active),
+            "current_axis": cal._current_axis,
+            "Radius": self._safe_float(cal.radius_var.get(), 30.0),
+            "Rotations": self._safe_float(cal.rotations_var.get(), 10.0),
+            "raw_dx": self._calib_raw.get("dx", 0),
+            "raw_dy": self._calib_raw.get("dy", 0),
+            "raw_dz": self._calib_raw.get("dz", 0),
+            "axis_results": dict(cal.axis_results),
+            "matrix": matrix,
+            "status": cal.status_lbl.cget("text"),
+            "status_color": cal.status_lbl.cget("text_color"),
+        }
+
+        tel = self._last_telemetry or {}
+        ui_metrics = tel.get("ui_metrics", {})
+        terminal = getattr(self, "_worker_terminal_status", None)
+        worker_alive = self.worker_process is not None and self.worker_process.is_alive()
+        if worker_alive:
+            worker_status = "running"
+        elif terminal:
+            worker_status = terminal
+        else:
+            worker_status = "idle"
+
+        live = {
+            "phase": tel.get("phase", "IDLE"),
+            "ui_color": tel.get("ui_color", "gray"),
+            "session_num": tel.get("session_num", "—"),
+            "trial_idx": tel.get("trial_idx", "—"),
+            "total_trials": tel.get("total_trials", "—"),
+            "hardware_state": ui_metrics,
+            "status_label": self.status_label.cget("text"),
+            "status_color": self.status_label.cget("text_color"),
+            "controls": {
+                "start": self.start_btn.cget("state"),
+                "stop": self.stop_btn.cget("state"),
+            },
+            "worker_status": worker_status,
+            "worker_error": getattr(self, "_worker_terminal_error", ""),
+        }
+
+        return {
+            "ts": time.time(),
+            "running": worker_alive or bool(cal._calib_active),
+            "config": config,
+            "calibration": calibration,
+            "live": live,
+            "visual": {
+                "ui_twin": self._last_ui_twin,
+                "trajectory": {
+                    "trail_points": self._trail_points[-1000:],
+                    "min_x": self._trail_min_x,
+                    "max_x": self._trail_max_x,
+                    "min_y": self._trail_min_y,
+                    "max_y": self._trail_max_y,
+                    "angle": self._trail_last_angle,
+                    "k_angle": ui_metrics.get("k_angle"),
+                    "k_turn_speed": ui_metrics.get("k_turn_speed"),
+                    "k_disp": ui_metrics.get("k_disp"),
+                },
+            },
+        }
+
+    def _push_web_state(self):
+        """Push a FullState snapshot at up to 20 Hz; drop-oldest on backpressure."""
+        now = time.monotonic()
+        if now - self._web_state_last_push < 0.05:
+            return
+        self._web_state_last_push = now
+        q = self.web_state_q
+        if q is None:
+            return
+        try:
+            q.put_nowait(self._build_web_state())
+        except queue.Full:
+            try:
+                q.get_nowait()  # drop stale frame, keep the freshest
+                q.put_nowait(self._build_web_state())
+            except (queue.Empty, queue.Full, ValueError, OSError):
+                pass
+        except (ValueError, OSError):
+            pass
 
     # ------------------------------------------------------------------
     # Widget construction
@@ -1278,6 +1502,8 @@ class MasterDashboard:
         """Kill stimulus worker, then launch CalibrationWorker."""
         if self.calib_process and self.calib_process.is_alive():
             return
+        self._worker_terminal_status = None
+        self._worker_terminal_error = ""
 
         # Shut down stimulus worker if running; always clear stale reference
         # to prevent _poll_telemetry from detecting a dead worker and calling
@@ -1296,7 +1522,7 @@ class MasterDashboard:
         self.start_btn.configure(state="disabled")
         self.stop_btn.configure(state="disabled")
         self._calib_panel.set_enabled(True)
-        self.status_label.configure(text="Calibration mode", text_color="cyan")
+        self._set_status("Calibration mode", "cyan")
 
         self._close_calib_queues()
         self.calib_cmd_queue, self.calib_telemetry_queue = create_ipc_queues()
@@ -1355,9 +1581,7 @@ class MasterDashboard:
             pass
         self._calib_panel.update_matrix_display(matrix)
         self._calib_just_applied = True
-        self.status_label.configure(
-            text="Calibration matrix applied & saved", text_color="lime"
-        )
+        self._set_status("Calibration matrix applied & saved", "lime")
 
     def _on_calib_process_exit(self):
         """Clean up after calibration worker exits."""
@@ -1371,7 +1595,7 @@ class MasterDashboard:
         self.start_btn.configure(state="normal")
 
         if not just_applied:
-            self.status_label.configure(text="Ready", text_color="white")
+            self._set_status("Ready", "white")
         else:
             self._calib_just_applied = False
 
@@ -1380,6 +1604,9 @@ class MasterDashboard:
     def start_experiment(self):
         if self.worker_process and self.worker_process.is_alive():
             return
+        self._ensure_web_running()
+        self._worker_terminal_status = None
+        self._worker_terminal_error = ""
 
         self._calib_panel.set_enabled(False)
         self._close_queues()
@@ -1397,14 +1624,14 @@ class MasterDashboard:
 
         self.start_btn.configure(state="disabled")
         self.stop_btn.configure(state="normal")
-        self.status_label.configure(text="Running...", text_color="cyan")
+        self._set_status("Running...", "cyan")
 
     def stop_experiment(self):
         if self.cmd_queue:
             try:
                 self.cmd_queue.put_nowait({"action": "POISON_PILL"})
                 self.stop_btn.configure(state="disabled")
-                self.status_label.configure(text="Stopping...", text_color="orange")
+                self._set_status("Stopping...", "orange")
             except queue.Full:
                 pass
 
@@ -1443,16 +1670,12 @@ class MasterDashboard:
 
                 self.stop_btn.configure(state="disabled")
                 if action == "worker_done":
-                    self.status_label.configure(
-                        text="Experiment completed. Cleaning up...", text_color="white"
-                    )
+                    self._set_status("Experiment completed. Cleaning up...", "white")
                 elif action == "worker_abort":
-                    self.status_label.configure(
-                        text="Experiment aborted. Cleaning up...", text_color="orange"
-                    )
+                    self._set_status("Experiment aborted. Cleaning up...", "orange")
                 elif action == "worker_error":
-                    self.status_label.configure(
-                        text=f"Error: {self._worker_terminal_error}", text_color="red"
+                    self._set_status(
+                        f"Error: {self._worker_terminal_error}", "red"
                     )
 
         if self.worker_process and not self.worker_process.is_alive():
@@ -1498,7 +1721,8 @@ class MasterDashboard:
 
                 if text:
                     self._reset_ui(text, color)
-                self._worker_terminal_status = None
+                # Keep _worker_terminal_status so the web mirror can show the
+                # DONE/ABORT/ERROR badge; it resets when the next experiment starts.
 
         # --- Calibration telemetry ---
         if self.calib_telemetry_queue:
@@ -1507,6 +1731,11 @@ class MasterDashboard:
                     data = self.calib_telemetry_queue.get_nowait()
                     action = data.get("action")
                     if action == "calibration_telemetry":
+                        self._calib_raw = {
+                            "dx": data.get("raw_dx", 0),
+                            "dy": data.get("raw_dy", 0),
+                            "dz": data.get("raw_dz", 0),
+                        }
                         self._calib_panel.handle_telemetry(data)
                     elif action == "axis_calib_done":
                         self._calib_panel.handle_axis_done(data)
@@ -1519,9 +1748,13 @@ class MasterDashboard:
         if self.calib_process and not self.calib_process.is_alive():
             self._on_calib_process_exit()
 
+        self._push_web_state()
+
         self.root.after(16, self._poll_telemetry)
 
     def _update_telemetry_ui(self, data: dict):
+        self._last_telemetry = data
+        self._last_ui_twin = data.get("ui_twin")
         phase = str(data.get("phase", "—"))
         sess = str(data.get("session_num", "—"))
         t_idx = str(data.get("trial_idx", "—"))
@@ -1741,7 +1974,12 @@ class MasterDashboard:
     def _reset_ui(self, status: str, color: str):
         self.start_btn.configure(state="normal")
         self.stop_btn.configure(state="disabled")
-        self.status_label.configure(text=status, text_color=color)
+        self._set_status(status, color)
+
+        # Clear the last worker frame so the web mirror returns to IDLE instead
+        # of showing the final phase/twin of the finished experiment forever.
+        self._last_telemetry = None
+        self._last_ui_twin = None
 
         self.lbl_phase_val.configure(text="IDLE", text_color="gray")
         self.lbl_hw_val.configure(text="Disconnected", text_color="gray")
@@ -1768,6 +2006,18 @@ class MasterDashboard:
                 self.cmd_queue.put_nowait({"action": "POISON_PILL"})
             except (queue.Full, OSError):
                 pass
+        if self.web_state_q:
+            try:
+                self.web_state_q.put_nowait({"__shutdown__": True})
+            except queue.Full:
+                # drop a stale state so the shutdown sentinel always gets through
+                try:
+                    self.web_state_q.get_nowait()
+                    self.web_state_q.put_nowait({"__shutdown__": True})
+                except (queue.Empty, queue.Full, ValueError, OSError):
+                    pass
+            except (ValueError, OSError):
+                pass
         self.root.after(100, self._check_safe_exit)
 
     def _check_safe_exit(self):
@@ -1777,18 +2027,23 @@ class MasterDashboard:
             self.worker_process is not None and self.worker_process.is_alive()
         )
         calib_alive = self.calib_process is not None and self.calib_process.is_alive()
+        web_alive = self.web_proc is not None and self.web_proc.is_alive()
 
-        if not worker_alive and not calib_alive:
+        if not worker_alive and not calib_alive and not web_alive:
             self._close_queues()
             self._close_calib_queues()
+            self._close_web_queue()
             self.root.destroy()
         elif self._exit_attempts >= 20:
             if self.worker_process and self.worker_process.is_alive():
                 self._kill_worker(self.worker_process)
             if self.calib_process and self.calib_process.is_alive():
                 self._kill_worker(self.calib_process)
+            if self.web_proc and self.web_proc.is_alive():
+                self._kill_worker(self.web_proc)
             self._close_queues()
             self._close_calib_queues()
+            self._close_web_queue()
             self.root.destroy()
         else:
             self.root.after(100, self._check_safe_exit)
