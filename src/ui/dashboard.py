@@ -23,12 +23,6 @@ except ImportError:
 from src.models.paradigm import PARADIGM_REGISTRY
 from src.workers.stimulus_worker import worker_entry, create_ipc_queues
 from src.workers.calibration_worker import calibration_worker_entry
-from src.core.web_telemetry import (
-    DEFAULT_PORT,
-    find_free_port,
-    local_web_url,
-    web_telemetry_entry,
-)
 
 # Kinematic trigger params: (key, default, label). Rendered / serialized only
 # when Execution Mode is Kinematic.
@@ -526,8 +520,11 @@ class MasterDashboard:
         self.web_state_q: Optional[mp.Queue] = None
         self._web_url: str = ""
         self._web_state_last_push: float = 0.0
+        self._web_restart_at: float = 0.0
         self._status_text: str = ""
         self._closing: bool = False
+        self._worker_terminal_status: Optional[str] = None
+        self._worker_terminal_error: str = ""
         self._last_telemetry: Optional[Dict[str, Any]] = None
         self._last_ui_twin: Any = None
         self._calib_raw: Dict[str, Any] = {"dx": 0, "dy": 0, "dz": 0}
@@ -594,6 +591,16 @@ class MasterDashboard:
         self.status_label.configure(text=text, text_color=color)
 
     def _start_web_server(self):
+        try:
+            from src.core.web_telemetry import (  # lazy: web deps are optional
+                DEFAULT_PORT,
+                find_free_port,
+                local_web_url,
+                web_telemetry_entry,
+            )
+        except ImportError:
+            self._web_url = ""
+            return  # fastapi/uvicorn not installed — mirror unavailable, controller unaffected
         if self.web_proc and self.web_proc.is_alive():
             return
         port = find_free_port(DEFAULT_PORT)
@@ -609,11 +616,14 @@ class MasterDashboard:
         )
         self.web_proc.start()
         self._web_url = local_web_url(port)
-        self._set_status("Ready")
-
-    def _ensure_web_running(self):
-        if not (self.web_proc and self.web_proc.is_alive()):
-            self._start_web_server()
+        # First start → "Ready"; mid-run restart → keep the active status text
+        # and just refresh the (possibly changed) port on the label.
+        color = (
+            "white"
+            if self._status_text in ("", "Ready")
+            else self.status_label.cget("text_color")
+        )
+        self._set_status(self._status_text or "Ready", color)
 
     def _close_web_queue(self):
         q = self.web_state_q
@@ -661,11 +671,16 @@ class MasterDashboard:
                             "key": en_key,
                             "type": "bool",
                             "label": en_key,
-                            "value": bool(pv[en_key].get()),
+                            "value": pv[en_key].get(),
                         }
                     )
 
         exec_mode = pv["Execution Mode"].get() if "Execution Mode" in pv else "Auto"
+        session_total = (
+            self._safe_int(self.session_total_var.get(), 2)
+            if exec_mode != "Manual"
+            else None
+        )
         res_parts = [p.strip() for p in self.resolution_var.get().split(",")]
         config: dict = {
             "Paradigm": p_name,
@@ -676,7 +691,7 @@ class MasterDashboard:
                 self.viewing_distance_var.get(), 30.0
             ),
             "Screen Width (cm)": self._safe_float(self.screen_width_cm_var.get(), 53.0),
-            "Resolution W": self._safe_int(res_parts[0], 3840) if res_parts else 3840,
+            "Resolution W": self._safe_int(res_parts[0], 3840),
             "Resolution H": self._safe_int(res_parts[1], 1080)
             if len(res_parts) > 1
             else 1080,
@@ -684,12 +699,12 @@ class MasterDashboard:
             "ISI Range (sec)": self.isi_range_var.get(),
             "Serial Port": self.serial_port_var.get(),
             "Screen ID": self._safe_int(self.screen_id_var.get(), 1),
-            "Debug Mode": bool(self.debug_var.get()),
+            "Debug Mode": self.debug_var.get(),
             "Execution Mode": exec_mode,
             "params": params,
         }
-        if exec_mode != "Manual":  # Total Sessions is hidden in Manual mode
-            config["Session Total"] = self._safe_int(self.session_total_var.get(), 2)
+        if session_total is not None:  # Total Sessions is hidden in Manual mode
+            config["Session Total"] = session_total
 
         cal = self._calib_panel
         matrix: list = []
@@ -703,7 +718,7 @@ class MasterDashboard:
             matrix.append(row)
 
         calibration = {
-            "is_active": bool(cal._calib_active),
+            "is_active": cal._calib_active,
             "current_axis": cal._current_axis,
             "Radius": self._safe_float(cal.radius_var.get(), 30.0),
             "Rotations": self._safe_float(cal.rotations_var.get(), 10.0),
@@ -718,7 +733,7 @@ class MasterDashboard:
 
         tel = self._last_telemetry or {}
         ui_metrics = tel.get("ui_metrics", {})
-        terminal = getattr(self, "_worker_terminal_status", None)
+        terminal = self._worker_terminal_status
         worker_alive = self.worker_process is not None and self.worker_process.is_alive()
         if worker_alive:
             worker_status = "running"
@@ -733,20 +748,20 @@ class MasterDashboard:
             "session_num": tel.get("session_num", "—"),
             "trial_idx": tel.get("trial_idx", "—"),
             "total_trials": tel.get("total_trials", "—"),
+            "total_sessions": session_total,
             "hardware_state": ui_metrics,
-            "status_label": getattr(self, "_status_text", ""),
+            "status_label": self._status_text,
             "status_color": self.status_label.cget("text_color"),
             "controls": {
                 "start": self.start_btn.cget("state"),
                 "stop": self.stop_btn.cget("state"),
             },
             "worker_status": worker_status,
-            "worker_error": getattr(self, "_worker_terminal_error", ""),
+            "worker_error": self._worker_terminal_error,
         }
 
         return {
-            "ts": time.time(),
-            "running": worker_alive or bool(cal._calib_active),
+            "running": worker_alive or cal._calib_active,
             "config": config,
             "calibration": calibration,
             "live": live,
@@ -776,9 +791,14 @@ class MasterDashboard:
             q.put_nowait(state)
         except queue.Full:
             try:
-                q.get_nowait()
+                q.get_nowait()  # drop one stale frame
+            except queue.Empty:
+                pass  # consumer drained it — a slot is free now
+            except (ValueError, OSError):
+                return
+            try:
                 q.put_nowait(state)
-            except (queue.Empty, queue.Full, ValueError, OSError):
+            except (queue.Full, ValueError, OSError):
                 pass
         except (ValueError, OSError):
             pass
@@ -786,6 +806,13 @@ class MasterDashboard:
     def _push_web_state(self):
         """Push a FullState snapshot at up to 20 Hz."""
         if self._closing:
+            return
+        if not (self.web_proc and self.web_proc.is_alive()):
+            # Mirror died mid-run — self-heal, throttled so a persistently
+            # failing server can't spawn a process every poll tick.
+            if self._web_url and time.monotonic() - self._web_restart_at > 2.0:
+                self._web_restart_at = time.monotonic()
+                self._start_web_server()
             return
         now = time.monotonic()
         if now - self._web_state_last_push < 0.05:
@@ -1611,7 +1638,7 @@ class MasterDashboard:
     def start_experiment(self):
         if self.worker_process and self.worker_process.is_alive():
             return
-        self._ensure_web_running()
+        self._start_web_server()  # ensure the mirror is up for this run
         self._worker_terminal_status = None
         self._worker_terminal_error = ""
 
@@ -1648,8 +1675,6 @@ class MasterDashboard:
     def _poll_telemetry(self):
         if self.telemetry_queue:
             # Drain queue in a single pass, keeping only the latest frame per category
-            batch_count = 0
-            salvaged_event = None
             latest_telemetry = None
             terminal_event = None
 
@@ -1662,7 +1687,6 @@ class MasterDashboard:
                         latest_telemetry = data
                     elif action in ["worker_done", "worker_abort", "worker_error"]:
                         terminal_event = data
-                        salvaged_event = data
                 except (queue.Empty, ValueError, OSError, EOFError):
                     break
 
@@ -1709,7 +1733,7 @@ class MasterDashboard:
                         except (queue.Empty, ValueError, OSError, EOFError):
                             break
 
-                status = getattr(self, "_worker_terminal_status", None)
+                status = self._worker_terminal_status
                 color, text = "white", "Ready"
 
                 if status == "worker_done":
@@ -1718,7 +1742,7 @@ class MasterDashboard:
                     text, color = "Experiment aborted", "orange"
                 elif status == "worker_error":
                     text, color = (
-                        f"Error: {getattr(self, '_worker_terminal_error', 'Unknown')}",
+                        f"Error: {self._worker_terminal_error or 'Unknown'}",
                         "red",
                     )
                 elif self.start_btn.cget("state") == "disabled" and not self.calib_process:

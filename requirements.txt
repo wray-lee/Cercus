@@ -3,5 +3,5 @@ numpy
 psychopy
 pyserial
 fastapi
-uvicorn
+uvicorn>=0.30  # >=0.30 required for ws="websockets-sansio"
 websockets

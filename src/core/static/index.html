@@ -34,9 +34,8 @@
     border:1px solid var(--border); border-radius:16px;
     box-shadow:0 10px 34px rgba(0,0,0,.38);
   }
-  .font-mono,.mono{ font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,monospace; font-variant-numeric:tabular-nums; }
+  .mono{ font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,monospace; font-variant-numeric:tabular-nums; }
   canvas{ transform:translateZ(0); }
-  .tabnum{ font-variant-numeric:tabular-nums; }
 
   @keyframes pulseDot{ 0%,100%{ box-shadow:0 0 0 0 rgba(163,230,53,.55);} 55%{ box-shadow:0 0 0 7px rgba(163,230,53,0);} }
   .pulse{ animation:pulseDot 1.5s infinite; }
@@ -283,13 +282,14 @@ const el = {
   twin:$('twinCanvas'), twinSide:$('twinSide'), traj:$('trajCanvas'),
   kinAngle:$('kinAngle'), kinTurn:$('kinTurn'), kinDisp:$('kinDisp'),
 };
+const matrixCells = ['m00','m01','m02','m10','m11','m12','m20','m21','m22'].map($);
+let lastMatrixSig = '';
 if (typeof lucide !== 'undefined') lucide.createIcons();
 
 /* ---------- tiny helpers ---------- */
 const TK = {
   cyan:'#22D3EE', lime:'#A3E635', orange:'#FB923C', yellow:'#FACC15', red:'#F87171',
-  white:'#FFFFFF', black:'#000000', gray:'#6B7280', 'gray70':'#B3B3B3',
-  blue:'#60A5FA', '#ff4d4d':'#F87171',
+  white:'#FFFFFF', gray:'#6B7280', '#ff4d4d':'#F87171',
 };
 function tkColor(c){ if(!c) return '#6B7280'; const k=String(c).toLowerCase();
   if (TK[k]) return TK[k]; if (String(c)[0]==='#') return c; return '#6B7280'; }
@@ -397,9 +397,8 @@ function renderTraj(traj){
   let dec = pts;
   if (pts.length > 200){ const step=Math.ceil(pts.length/200); dec = pts.filter((_,i)=> i%step===0); }
   if (dec.length < 2){ updateKin(traj); return; }
-  let minx=traj.min_x, maxx=traj.max_x, miny=traj.min_y, maxy=traj.max_y;
-  if (minx===undefined){ const xs=dec.map(p=>p[0]), ys=dec.map(p=>p[1]);
-    minx=Math.min(...xs); maxx=Math.max(...xs); miny=Math.min(...ys); maxy=Math.max(...ys); }
+  // backend (_build_web_state) always sends the trail bounding box
+  const {min_x:minx, max_x:maxx, min_y:miny, max_y:maxy} = traj;
   const PAD=10, W=150, H=150;
   const mx=Math.max((maxx-minx)*0.1, 0.5), my=Math.max((maxy-miny)*0.1, 0.5);
   const x0=minx-mx, x1=maxx+mx, y0=miny-my, y1=maxy+my;
@@ -449,12 +448,17 @@ function setOdo(node, v){
   if (node.textContent !== s){ node.textContent = s; flash(node.closest('.hw-card')); }
 }
 
+let lastPhaseKey = '';
 function updatePhase(s){
   const ph = (s && s.phase) || '--';
   const col = tkColor(s && s.ui_color);
-  for (const pill of [el.phasePill, el.livePhase]){
-    pill.textContent = ph;
-    pill.style.background = col; pill.style.color = '#0A0A0B';
+  const key = ph + '|' + col;
+  if (key !== lastPhaseKey){  // skip idempotent DOM writes at 60 fps
+    lastPhaseKey = key;
+    for (const pill of [el.phasePill, el.livePhase]){
+      pill.textContent = ph;
+      pill.style.background = col; pill.style.color = '#0A0A0B';
+    }
   }
   el.phasePill.classList.toggle('phase-glow', connected && running);
 }
@@ -462,15 +466,21 @@ function updateHeader(s){
   el.subject.textContent = (s && s.config && s.config['Subject ID']) || '--';
   el.pattern.textContent = (s && s.config && s.config.Pattern) || '--';
 }
+let lastRingKey = '';
 function renderRing(s){
   const sess = s && s.live ? s.live.session_num : null;
-  const tot = s && s.live ? s.live.total_trials : null;
+  const tot = s && s.live ? s.live.total_sessions : null;
   const c = 2*Math.PI*16;
   let pct = 0;
   if (typeof tot==='number' && tot>0 && typeof sess==='number') pct = Math.min(1, sess/tot);
-  el.ringFg.style.strokeDasharray = `${c*pct} ${c}`;
   const showTot = typeof tot==='number' && tot>0;
-  el.sessText.textContent = (sess===null||sess==='—') ? '--' : String(sess) + (showTot ? ' / '+tot : '');
+  const txt = (sess===null||sess==='—') ? '--' : String(sess) + (showTot ? ' / '+tot : '');
+  const key = txt + '|' + pct.toFixed(4);
+  if (key !== lastRingKey){  // skip idempotent style/text writes at 60 fps
+    lastRingKey = key;
+    el.ringFg.style.strokeDasharray = `${c*pct} ${c}`;
+    el.sessText.textContent = txt;
+  }
 }
 
 /* ---------- low-freq renders ---------- */
@@ -538,24 +548,33 @@ function renderCalibration(c){
   el.calRot.textContent = fmtVal(c.Rotations);
   el.calStatus.textContent = c.status || '—';
   el.calStatus.style.color = tkColor(c.status_color);
-  // axis results checklist
-  el.axisList.innerHTML = '';
-  for (const ax of ['X','Y','Z']){
-    const r = c.axis_results && c.axis_results[ax];
-    const row = document.createElement('div'); row.className='flex items-center gap-2 py-1';
-    const dot = document.createElement('span');
-    dot.className = 'w-2 h-2 rounded-full ' + (r ? 'bg-[#A3E635]' : 'bg-[#3f3f46]');
-    const lbl = document.createElement('span'); lbl.className='mono text-xs text-zinc-400 w-4'; lbl.textContent=ax;
-    const det = document.createElement('span'); det.className='mono text-[11px] truncate';
-    if (r){ det.textContent = `${fmtVal(r.target_mm)}mm  [${(r.raw_vector||[]).join(', ')}]`; det.classList.add('text-zinc-200'); }
-    else { det.textContent='pending'; det.classList.add('text-zinc-600'); }
-    row.append(dot, lbl, det); el.axisList.appendChild(row);
+  // axis results checklist — rebuild only when the results change
+  const sig = JSON.stringify(c.axis_results || {});
+  if (el.axisList.dataset.sig !== sig){
+    el.axisList.dataset.sig = sig;
+    el.axisList.innerHTML = '';
+    for (const ax of ['X','Y','Z']){
+      const r = c.axis_results && c.axis_results[ax];
+      const row = document.createElement('div'); row.className='flex items-center gap-2 py-1';
+      const dot = document.createElement('span');
+      dot.className = 'w-2 h-2 rounded-full ' + (r ? 'bg-[#A3E635]' : 'bg-[#3f3f46]');
+      const lbl = document.createElement('span'); lbl.className='mono text-xs text-zinc-400 w-4'; lbl.textContent=ax;
+      const det = document.createElement('span'); det.className='mono text-[11px] truncate';
+      if (r){ det.textContent = `${fmtVal(r.target_mm)}mm  [${(r.raw_vector||[]).join(', ')}]`; det.classList.add('text-zinc-200'); }
+      else { det.textContent='pending'; det.classList.add('text-zinc-600'); }
+      row.append(dot, lbl, det); el.axisList.appendChild(row);
+    }
   }
-  // manual matrix
-  const m = c.matrix || [[1,0,0],[0,1,0],[0,0,1]];
-  for (let r=0;r<3;r++) for (let col=0;col<3;col++){
-    const cell = $('m'+r+col);
-    if (cell) cell.textContent = (m[r] && m[r][col]!=null) ? (+m[r][col]).toFixed(4) : '—';
+  // manual matrix (cells cached at startup; rebuild only when values change)
+  const m = c.matrix;
+  if (!m) return;
+  const msig = JSON.stringify(m);
+  if (lastMatrixSig !== msig){
+    lastMatrixSig = msig;
+    for (let i=0;i<9;i++){
+      const cell = matrixCells[i];
+      if (cell) cell.textContent = (m[Math.floor(i/3)] && m[Math.floor(i/3)][i%3]!=null) ? (+m[Math.floor(i/3)][i%3]).toFixed(4) : '—';
+    }
   }
 }
 
@@ -642,17 +661,18 @@ function fallbackCopy(text, done){
 /* ---------- RAF loop (high + low frequency) ---------- */
 function renderHigh(s){
   updatePhase(s.live);
-  updateHeader(s);
   renderRing(s);
   const v = s.visual || {};
   renderTwin(v.ui_twin);
-  el.twinSide.textContent = (v.ui_twin && v.ui_twin.side) || '—';
+  const twinSide = (v.ui_twin && v.ui_twin.side) || '—';
+  if (el.twinSide.textContent !== twinSide) el.twinSide.textContent = twinSide;
   renderTraj(v.trajectory);
   renderOdometers(s.calibration);
   updateFavicon();
 }
 function renderLow(s){
   renderCoreConfig(s.config);
+  updateHeader(s);  // header subject/pattern change only on config edits
   renderParams(s.config && s.config.params);
   renderCalibration(s.calibration);
   renderLive(s.live);

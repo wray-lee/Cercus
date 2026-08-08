@@ -49,6 +49,11 @@ def _sanitize_nonfinite(obj: Any) -> Any:
         return {k: _sanitize_nonfinite(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple, set)):
         return [_sanitize_nonfinite(v) for v in obj]
+    if hasattr(obj, "item"):  # numpy scalar (np.float32 is not a float subclass)
+        try:
+            return _sanitize_nonfinite(float(obj))
+        except (TypeError, ValueError):
+            return obj
     return obj
 
 
@@ -104,9 +109,17 @@ class _Manager:
     async def broadcast(self, text: str) -> None:
         for ws in list(self.clients):
             try:
-                await ws.send_text(text)
+                # Timeout so one slow client can't stall the ~20 Hz pump for all.
+                await asyncio.wait_for(ws.send_text(text), timeout=1.0)
             except Exception:
                 self.clients.discard(ws)
+                try:
+                    # ws.close() is also a backpressured ASGI send that awaits
+                    # writable — bound it too, else a dead client hangs the pump
+                    # on the cleanup path. The browser's onclose then reconnects.
+                    await asyncio.wait_for(ws.close(), timeout=1.0)
+                except Exception:
+                    pass
 
 
 async def _pump_loop(state_q: "queue.Queue", manager: _Manager, holder: dict) -> None:
@@ -117,29 +130,26 @@ async def _pump_loop(state_q: "queue.Queue", manager: _Manager, holder: dict) ->
         if server is not None:
             server.should_exit = True
 
-    try:
+    while True:
         while True:
-            while True:
-                try:
-                    item = state_q.get_nowait()
-                except queue.Empty:
-                    break
-                except (ValueError, OSError, EOFError):  # queue/feeder gone
-                    _stop()
-                    return
-                if isinstance(item, dict) and item.get(_SHUTDOWN_KEY):
-                    _stop()
-                    return
-                manager.latest = item
+            try:
+                item = state_q.get_nowait()
+            except queue.Empty:
+                break
+            except (ValueError, OSError, EOFError):  # queue/feeder gone
+                _stop()
+                return
+            if isinstance(item, dict) and item.get(_SHUTDOWN_KEY):
+                _stop()
+                return
+            manager.latest = item
 
-            if manager.clients and manager.latest:
-                try:
-                    await manager.broadcast(_dumps(manager.latest))
-                except Exception:
-                    pass
-            await asyncio.sleep(0.05)
-    except asyncio.CancelledError:
-        raise
+        if manager.clients and manager.latest:
+            try:
+                await manager.broadcast(_dumps(manager.latest))
+            except Exception:
+                pass
+        await asyncio.sleep(0.05)
 
 
 def _build_app(state_q: "queue.Queue", holder: dict) -> FastAPI:
@@ -164,7 +174,14 @@ def _build_app(state_q: "queue.Queue", holder: dict) -> FastAPI:
             if manager.latest:
                 await ws.send_text(_dumps(manager.latest))  # instant first paint
             while True:
-                await ws.receive_text()  # ignore incoming; keep the socket alive
+                try:
+                    # Idle browsers send nothing — the timeout is only a probe
+                    # to reap a handler whose connection the pump already dropped
+                    # for backpressure (otherwise the half-open task leaks).
+                    await asyncio.wait_for(ws.receive_text(), timeout=30.0)
+                except asyncio.TimeoutError:
+                    if ws not in manager.clients:
+                        return
         except Exception:
             pass  # disconnect, send failure, or any other client error
         finally:
@@ -175,22 +192,33 @@ def _build_app(state_q: "queue.Queue", holder: dict) -> FastAPI:
     return app
 
 
+def _make_server(
+    state_q: "queue.Queue",
+    holder: dict,
+    host: str,
+    port: int,
+    log_level: str = "warning",
+) -> uvicorn.Server:
+    """Build the uvicorn server (shared by the daemon entry and the self-check)."""
+    app = _build_app(state_q, holder)
+    config = uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        log_level=log_level,
+        lifespan="on",
+        ws="websockets-sansio",
+    )
+    server = uvicorn.Server(config)
+    holder["server"] = server
+    return server
+
+
 def web_telemetry_entry(state_q: "queue.Queue", port: int = DEFAULT_PORT) -> None:
     """mp.Process target: run the FastAPI mirror until told to shut down."""
     holder: dict = {}
     try:
-        app = _build_app(state_q, holder)
-        config = uvicorn.Config(
-            app,
-            host="0.0.0.0",
-            port=port,
-            log_level="warning",
-            lifespan="on",
-            ws="websockets-sansio",
-        )
-        server = uvicorn.Server(config)
-        holder["server"] = server
-        server.run()
+        _make_server(state_q, holder, "0.0.0.0", port).run()
     except Exception:
         # The web mirror is best-effort; it must never affect the experiment.
         pass
@@ -209,12 +237,7 @@ def _demo() -> int:
     state_q: "queue.Queue" = queue.Queue()
     holder: dict = {}
     port = find_free_port(8326)
-    app = _build_app(state_q, holder)
-    config = uvicorn.Config(
-        app, host="127.0.0.1", port=port, log_level="error", lifespan="on"
-    )
-    server = uvicorn.Server(config)
-    holder["server"] = server
+    server = _make_server(state_q, holder, "127.0.0.1", port, "error")
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
 
