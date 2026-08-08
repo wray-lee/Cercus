@@ -6,6 +6,8 @@ import queue
 import time
 import threading
 import multiprocessing as mp
+import tkinter as tk
+import webbrowser
 from typing import Dict, Any, Optional, List
 import customtkinter as ctk
 from datetime import datetime
@@ -482,6 +484,21 @@ class CalibrationPanel:
             return None
 
 
+# Bento-style status styling for the bottom bar (matches web mirror palette).
+STATUS_STYLE = {
+    "Ready":      {"dot": "#6B7280", "text": "#9CA3AF", "pulse": False},
+    "Idle":       {"dot": "#6B7280", "text": "#9CA3AF", "pulse": False},
+    "Running":    {"dot": "#22D3EE", "text": "#22D3EE", "pulse": True},
+    "Running...": {"dot": "#22D3EE", "text": "#22D3EE", "pulse": True},
+    "Stopping...": {"dot": "#FB923C", "text": "#FB923C", "pulse": False},
+    "Aborted":    {"dot": "#FB923C", "text": "#FB923C", "pulse": False},
+    "Error":      {"dot": "#EF4444", "text": "#EF4444", "pulse": False},
+}
+# Legacy tk color names used at old _set_status call sites → bento hex accents.
+_COLOR_MAP = {"white": "#E5E7EB", "cyan": "#22D3EE", "orange": "#FB923C",
+              "red": "#EF4444", "lime": "#A3E635"}
+
+
 class MasterDashboard:
     # Max jump between consecutive trajectory points (mm) before the sample is
     # treated as an outlier and the trail is reset. Configurable.
@@ -584,12 +601,72 @@ class MasterDashboard:
     # ------------------------------------------------------------------
     # Web mirror (real-time browser dashboard, see src/core/web_telemetry.py)
     # ------------------------------------------------------------------
-    def _set_status(self, text: str, color: str = "white"):
-        """Update the status label, keeping the web mirror URL visible."""
+    def _set_status(self, text: str, color: Optional[str] = None):
+        """Color-coded status: STATUS_STYLE when text matches, else an explicit
+        legacy color override for ad-hoc messages (calibration / completion /
+        error). The web mirror URL is no longer concatenated here — it lives in
+        the right-hand pill (self.web_url_label)."""
         self._status_text = text
-        if self._web_url:
-            text = f"{text}   |   Web: {self._web_url}"
-        self.status_label.configure(text=text, text_color=color)
+        style = STATUS_STYLE.get(text)
+        if style is None and color is not None:
+            text_color = _COLOR_MAP.get(color, color)
+            dot, pulse = text_color, False
+        else:
+            style = style or STATUS_STYLE["Ready"]
+            dot, text_color, pulse = style["dot"], style["text"], style["pulse"]
+        self.status_dot.configure(text_color=dot)
+        self.status_label.configure(text=text, text_color=text_color)
+        self._schedule_pulse(pulse)
+
+    def _schedule_pulse(self, active: bool):
+        """(Re)arm or cancel the 500ms dot pulse; always restores the dot color."""
+        if getattr(self, "_pulse_after_id", None) is not None:
+            try:
+                self.root.after_cancel(self._pulse_after_id)
+            except Exception:
+                pass
+            self._pulse_after_id = None
+        self._pulse_visible = True
+        if active:
+            self._pulse_after_id = self.root.after(500, self._pulse_tick)
+
+    def _pulse_tick(self):
+        """Toggle the status dot visibility; color matches the status_bar bg when hidden."""
+        try:
+            self._pulse_visible = not self._pulse_visible
+            self.status_dot.configure(
+                text_color=self.status_label.cget("text_color")
+                if self._pulse_visible else "#1E1E21")
+            self._pulse_after_id = self.root.after(500, self._pulse_tick)
+        except tk.TclError:
+            self._pulse_after_id = None
+
+    def _open_web_mirror(self, _event=None):
+        """Open the mirror URL in the default browser and copy it to clipboard."""
+        if not self._web_url:
+            return
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(self._web_url)
+        except tk.TclError:
+            pass
+        try:
+            webbrowser.open(self._web_url)
+        except Exception:
+            pass
+
+    def _copy_web_url(self):
+        """Copy the mirror URL and flash a short '✓' on the copy button."""
+        if not self._web_url:
+            return
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(self._web_url)
+        except tk.TclError:
+            pass
+        self.copy_web_btn.configure(text="✓", text_color="#22D3EE")
+        self.root.after(1000, lambda: self.copy_web_btn.configure(
+            text="⧉", text_color="#9CA3AF"))
 
     def _start_web_server(self):
         try:
@@ -601,12 +678,14 @@ class MasterDashboard:
             )
         except ImportError:
             self._web_url = ""
+            self.web_url_label.configure(text="offline", text_color="#6B7280")
             return  # fastapi/uvicorn not installed — mirror unavailable, controller unaffected
         if self.web_proc and self.web_proc.is_alive():
             return
         port = find_free_port(DEFAULT_PORT)
         if port == 0:
-            self._set_status("Ready (web mirror unavailable: no free port)")
+            self.web_url_label.configure(text="unavailable", text_color="#6B7280")
+            self._set_status("Ready")
             return
         self._close_web_queue()
         self.web_state_q = mp.Queue(maxsize=8)
@@ -617,14 +696,8 @@ class MasterDashboard:
         )
         self.web_proc.start()
         self._web_url = local_web_url(port)
-        # First start → "Ready"; mid-run restart → keep the active status text
-        # and just refresh the (possibly changed) port on the label.
-        color = (
-            "white"
-            if self._status_text in ("", "Ready")
-            else self.status_label.cget("text_color")
-        )
-        self._set_status(self._status_text or "Ready", color)
+        self.web_url_label.configure(text=self._web_url, text_color="#22D3EE")
+        self._set_status(self._status_text or "Ready")
 
     def _close_web_queue(self):
         q = self.web_state_q
@@ -692,7 +765,7 @@ class MasterDashboard:
 
         main_frame.grid_rowconfigure(0, weight=1)  # top_row gets vertical stretch
         main_frame.grid_rowconfigure(1, weight=0)  # status_frame fixed height
-        main_frame.grid_rowconfigure(2, weight=0)  # status_label fixed height
+        main_frame.grid_rowconfigure(2, weight=0)  # status_bar fixed height
         main_frame.grid_rowconfigure(3, weight=0)  # ctrl_frame fixed height
         main_frame.grid_columnconfigure(0, weight=1)
 
@@ -933,9 +1006,34 @@ class MasterDashboard:
         )
         self._lbl_kin_disp.pack(side="left")
 
-        # --- Status label ---
-        self.status_label = ctk.CTkLabel(main_frame, text="Ready", fg_color="gray15")
-        self.status_label.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+        # --- Status bar (bento-style bottom bar) ---
+        self.status_bar = ctk.CTkFrame(main_frame, fg_color="#1E1E21", corner_radius=10,
+                                       height=32, border_width=1, border_color="#2A2A2E")
+        self.status_bar.grid(row=2, column=0, sticky="ew", pady=(10, 0), padx=5)
+
+        left = ctk.CTkFrame(self.status_bar, fg_color="transparent")
+        left.pack(side="left", fill="both", expand=True, padx=(12, 0))
+        self.status_dot = ctk.CTkLabel(left, text="●", font=("JetBrains Mono", 14), text_color="#6B7280")
+        self.status_dot.pack(side="left")
+        self.status_label = ctk.CTkLabel(left, text="Ready",
+                                         font=("JetBrains Mono", 12, "bold"), text_color="#9CA3AF")
+        self.status_label.pack(side="left", padx=(8, 0))
+
+        right = ctk.CTkFrame(self.status_bar, fg_color="transparent")
+        right.pack(side="right", padx=(0, 12))
+        ctk.CTkLabel(right, text="Web Mirror", text_color="#6B7280",
+                     font=("JetBrains Mono", 11)).pack(side="left")
+        pill = ctk.CTkFrame(right, fg_color="#2A2A2E", corner_radius=6)
+        pill.pack(side="left", padx=(8, 0), pady=5)
+        self.web_url_label = ctk.CTkLabel(pill, text="http://—", text_color="#22D3EE",
+                                          font=("JetBrains Mono", 11), cursor="hand2")
+        self.web_url_label.pack(side="left", padx=(8, 4), pady=2)
+        self.web_url_label.bind("<Button-1>", self._open_web_mirror)
+        self.copy_web_btn = ctk.CTkButton(pill, text="⧉", width=24, height=18,
+                                          font=("JetBrains Mono", 11), fg_color="transparent",
+                                          text_color="#9CA3AF", hover_color="#3A3A3E",
+                                          corner_radius=4, command=self._copy_web_url)
+        self.copy_web_btn.pack(side="left", padx=(0, 4))
 
         # --- Control panel ---
         ctrl_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
