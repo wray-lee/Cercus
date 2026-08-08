@@ -19,8 +19,6 @@ import math
 import os
 import queue
 import socket
-import threading
-import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 
@@ -114,6 +112,11 @@ class _Manager:
 async def _pump_loop(state_q: "queue.Queue", manager: _Manager, holder: dict) -> None:
     """Non-blockingly drain the state queue, then broadcast the latest snapshot
     to every client at ~20 Hz. A {'__shutdown__': True} frame stops the server."""
+    def _stop() -> None:
+        server = holder.get("server")
+        if server is not None:
+            server.should_exit = True
+
     try:
         while True:
             while True:
@@ -121,15 +124,11 @@ async def _pump_loop(state_q: "queue.Queue", manager: _Manager, holder: dict) ->
                     item = state_q.get_nowait()
                 except queue.Empty:
                     break
-                except (ValueError, OSError, EOFError):
-                    server = holder.get("server")
-                    if server is not None:
-                        server.should_exit = True
+                except (ValueError, OSError, EOFError):  # queue/feeder gone
+                    _stop()
                     return
                 if isinstance(item, dict) and item.get(_SHUTDOWN_KEY):
-                    server = holder.get("server")
-                    if server is not None:
-                        server.should_exit = True
+                    _stop()
                     return
                 manager.latest = item
 
@@ -204,9 +203,12 @@ def web_telemetry_entry(state_q: "queue.Queue", port: int = DEFAULT_PORT) -> Non
 
 
 def _demo() -> int:
+    import threading
+    import time
+
     state_q: "queue.Queue" = queue.Queue()
     holder: dict = {}
-    port = 8326
+    port = find_free_port(8326)
     app = _build_app(state_q, holder)
     config = uvicorn.Config(
         app, host="127.0.0.1", port=port, log_level="error", lifespan="on"

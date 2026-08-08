@@ -30,6 +30,15 @@ from src.core.web_telemetry import (
     web_telemetry_entry,
 )
 
+# Kinematic trigger params: (key, default, label). Rendered / serialized only
+# when Execution Mode is Kinematic.
+_KINEMATIC_PARAMS = [
+    ("Trigger Duration (ms)", 2000.0, "Trigger Duration (ms):"),
+    ("Trigger Dist (mm)", 5.0, "Trigger Dist (mm):"),
+    ("Trigger Angle (°)", 10.0, "Trigger Angle (°):"),
+    ("Trigger Speed (units/s)", 0.0, "Trigger Speed (units/s):"),
+]
+
 
 # ---- Pure-Python 3x3 matrix helpers (no numpy dependency) ----
 
@@ -517,6 +526,8 @@ class MasterDashboard:
         self.web_state_q: Optional[mp.Queue] = None
         self._web_url: str = ""
         self._web_state_last_push: float = 0.0
+        self._status_text: str = ""
+        self._closing: bool = False
         self._last_telemetry: Optional[Dict[str, Any]] = None
         self._last_ui_twin: Any = None
         self._calib_raw: Dict[str, Any] = {"dx": 0, "dy": 0, "dz": 0}
@@ -577,6 +588,7 @@ class MasterDashboard:
     # ------------------------------------------------------------------
     def _set_status(self, text: str, color: str = "white"):
         """Update the status label, keeping the web mirror URL visible."""
+        self._status_text = text
         if self._web_url:
             text = f"{text}   |   Web: {self._web_url}"
         self.status_label.configure(text=text, text_color=color)
@@ -584,9 +596,12 @@ class MasterDashboard:
     def _start_web_server(self):
         if self.web_proc and self.web_proc.is_alive():
             return
+        port = find_free_port(DEFAULT_PORT)
+        if port == 0:
+            self._set_status("Ready (web mirror unavailable: no free port)")
+            return
         self._close_web_queue()
         self.web_state_q = mp.Queue(maxsize=8)
-        port = find_free_port(DEFAULT_PORT)
         self.web_proc = mp.Process(
             target=web_telemetry_entry,
             args=(self.web_state_q, port),
@@ -631,19 +646,10 @@ class MasterDashboard:
             }
             if meta.get("choices"):
                 entry["choices"] = meta["choices"]
-            if meta.get("min") is not None:
-                entry["min"] = meta["min"]
-            if meta.get("max") is not None:
-                entry["max"] = meta["max"]
             params.append(entry)
 
         # Kinematic trigger params (present only when Execution Mode is Kinematic)
-        for key in (
-            "Trigger Duration (ms)",
-            "Trigger Dist (mm)",
-            "Trigger Angle (°)",
-            "Trigger Speed (units/s)",
-        ):
+        for key, _, _ in _KINEMATIC_PARAMS:
             if key in pv:
                 params.append(
                     {"key": key, "type": "float", "label": key, "value": pv[key].get()}
@@ -728,7 +734,7 @@ class MasterDashboard:
             "trial_idx": tel.get("trial_idx", "—"),
             "total_trials": tel.get("total_trials", "—"),
             "hardware_state": ui_metrics,
-            "status_label": self.status_label.cget("text"),
+            "status_label": getattr(self, "_status_text", ""),
             "status_color": self.status_label.cget("text_color"),
             "controls": {
                 "start": self.start_btn.cget("state"),
@@ -760,25 +766,32 @@ class MasterDashboard:
             },
         }
 
-    def _push_web_state(self):
-        """Push a FullState snapshot at up to 20 Hz; drop-oldest on backpressure."""
-        now = time.monotonic()
-        if now - self._web_state_last_push < 0.05:
-            return
-        self._web_state_last_push = now
+    def _put_web_state(self, state: dict):
+        """Put a state frame, dropping the oldest on backpressure so the freshest
+        always wins — never blocks, never raises."""
         q = self.web_state_q
         if q is None:
             return
         try:
-            q.put_nowait(self._build_web_state())
+            q.put_nowait(state)
         except queue.Full:
             try:
-                q.get_nowait()  # drop stale frame, keep the freshest
-                q.put_nowait(self._build_web_state())
+                q.get_nowait()
+                q.put_nowait(state)
             except (queue.Empty, queue.Full, ValueError, OSError):
                 pass
         except (ValueError, OSError):
             pass
+
+    def _push_web_state(self):
+        """Push a FullState snapshot at up to 20 Hz."""
+        if self._closing:
+            return
+        now = time.monotonic()
+        if now - self._web_state_last_push < 0.05:
+            return
+        self._web_state_last_push = now
+        self._put_web_state(self._build_web_state())
 
     # ------------------------------------------------------------------
     # Widget construction
@@ -1189,12 +1202,6 @@ class MasterDashboard:
         # 3. Render kinematic trigger parameters (only when Execution Mode is Kinematic)
         exec_mode = self._param_vars.get("Execution Mode")
         if exec_mode and exec_mode.get() == "Kinematic":
-            _KINEMATIC_PARAMS = [
-                ("Trigger Duration (ms)", 2000.0, "Trigger Duration (ms):"),
-                ("Trigger Dist (mm)", 5.0, "Trigger Dist (mm):"),
-                ("Trigger Angle (°)", 10.0, "Trigger Angle (°):"),
-                ("Trigger Speed (units/s)", 0.0, "Trigger Speed (units/s):"),
-            ]
             _CHECKBOX_KEYS = {
                 "Trigger Dist (mm)",
                 "Trigger Angle (°)",
@@ -2006,18 +2013,9 @@ class MasterDashboard:
                 self.cmd_queue.put_nowait({"action": "POISON_PILL"})
             except (queue.Full, OSError):
                 pass
-        if self.web_state_q:
-            try:
-                self.web_state_q.put_nowait({"__shutdown__": True})
-            except queue.Full:
-                # drop a stale state so the shutdown sentinel always gets through
-                try:
-                    self.web_state_q.get_nowait()
-                    self.web_state_q.put_nowait({"__shutdown__": True})
-                except (queue.Empty, queue.Full, ValueError, OSError):
-                    pass
-            except (ValueError, OSError):
-                pass
+        # Stop new state pushes so the shutdown sentinel can never be dropped.
+        self._closing = True
+        self._put_web_state({"__shutdown__": True})
         self.root.after(100, self._check_safe_exit)
 
     def _check_safe_exit(self):

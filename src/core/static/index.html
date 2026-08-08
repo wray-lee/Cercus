@@ -123,7 +123,6 @@
     <section class="c-8 card p-5 flex flex-col gap-4 min-h-[420px]">
       <div class="flex items-center justify-between">
         <div class="sec-title"><i data-lucide="sliders-horizontal"></i> Experiment Config</div>
-        <span id="execBadge" class="chip chip-choice hidden">--</span>
       </div>
       <div id="cfgCore" class="grid grid-cols-1 sm:grid-cols-2 gap-x-8"></div>
       <div class="flex items-center justify-between border-t border-[#1d1d20] pt-3">
@@ -273,7 +272,7 @@ const el = {
   liveDot:$('liveDot'), liveText:$('liveText'), phasePill:$('phasePill'),
   subject:$('subjectText'), pattern:$('patternText'), ringFg:$('ringFg'), sessText:$('sessText'),
   urlText:$('urlText'), copyBtn:$('copyBtn'), toast:$('toast'),
-  execBadge:$('execBadge'), paramCount:$('paramCount'),
+  paramCount:$('paramCount'),
   cfgCore:$('cfgCore'), paramList:$('paramList'),
   calPill:$('calPill'), odoDx:$('odoDx'), odoDy:$('odoDy'), odoDz:$('odoDz'),
   calRadius:$('calRadius'), calRot:$('calRot'), calAxis:$('calAxis'),
@@ -289,8 +288,8 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 /* ---------- tiny helpers ---------- */
 const TK = {
   cyan:'#22D3EE', lime:'#A3E635', orange:'#FB923C', yellow:'#FACC15', red:'#F87171',
-  white:'#FFFFFF', black:'#000000', gray:'#6B7280', 'gray70':'#B3B3B3', green:'#A3E635',
-  blue:'#60A5FA', '#4488ff':'#4488ff', '#ff4d4d':'#F87171',
+  white:'#FFFFFF', black:'#000000', gray:'#6B7280', 'gray70':'#B3B3B3',
+  blue:'#60A5FA', '#ff4d4d':'#F87171',
 };
 function tkColor(c){ if(!c) return '#6B7280'; const k=String(c).toLowerCase();
   if (TK[k]) return TK[k]; if (String(c)[0]==='#') return c; return '#6B7280'; }
@@ -365,20 +364,6 @@ function drawCmd(ctx, item){
     if (kw.dash){ ctx.setLineDash(Array.isArray(kw.dash)?kw.dash:[kw.dash,kw.dash]); }
     ctx.strokeStyle=tkColor(kw.fill||'white'); ctx.lineWidth=width; ctx.stroke();
     ctx.setLineDash([]);
-  } else if (cmd==='create_polygon'){
-    ctx.beginPath(); ctx.moveTo(args[0],args[1]);
-    for(let i=2;i<args.length;i+=2) ctx.lineTo(args[i],args[i+1]);
-    ctx.closePath();
-    if (kw.fill){ ctx.fillStyle=tkColor(kw.fill); ctx.fill(); }
-    ctx.strokeStyle=tkColor(kw.outline||'white'); ctx.lineWidth=width; ctx.stroke();
-  } else if (cmd==='create_rectangle'){
-    ctx.beginPath(); ctx.rect(args[0],args[1],args[2]-args[0],args[3]-args[1]);
-    if (kw.fill){ ctx.fillStyle=tkColor(kw.fill); ctx.fill(); }
-    ctx.strokeStyle=tkColor(kw.outline||'white'); ctx.lineWidth=width; ctx.stroke();
-  } else if (cmd==='create_text'){
-    ctx.fillStyle=tkColor(kw.fill||'white');
-    ctx.font='11px "JetBrains Mono",monospace';
-    ctx.fillText(kw.text||'', args[0], args[1]);
   }
 }
 
@@ -450,7 +435,9 @@ function renderTraj(traj){
 }
 function updateKin(traj){
   const a = traj ? traj.k_angle : null, t = traj ? traj.k_turn_speed : null, d = traj ? traj.k_disp : null;
-  setText(el.kinAngle, fmtVal(a)); setText(el.kinTurn, fmtVal(t)); setText(el.kinDisp, fmtVal(d));
+  el.kinAngle.textContent = fmtVal(a);
+  el.kinTurn.textContent = fmtVal(t);
+  el.kinDisp.textContent = fmtVal(d);
 }
 
 function renderOdometers(c){
@@ -527,8 +514,6 @@ function renderCoreConfig(cfg){
     {id:'exec', label:'Execution Mode', v:cfg['Execution Mode']},
   ];
   syncList(el.cfgCore, items, it=> esc(fmtVal(it.v)));
-  el.execBadge.textContent = cfg['Execution Mode'] || '--';
-  el.execBadge.classList.toggle('hidden', !cfg['Execution Mode']);
 }
 function renderParams(params){
   const items = (params||[]).map(p=>({ id:p.key, label:p.label, v:p }));
@@ -536,7 +521,7 @@ function renderParams(params){
     if (p.type==='bool') return `<span class="chip ${p.value?'chip-on':'chip-off'}">${p.value?'ON':'OFF'}</span>`;
     if (p.type==='choice' && Array.isArray(p.choices))
       return `<span class="chip chip-choice" title="${esc(p.choices.join(' | '))}">${esc(fmtVal(p.value))}</span>`;
-    if (p.type==='info') return `<span class="text-zinc-500">${esc(String(p.value))}</span>`;
+    if (p.type==='info') return `<span class="text-zinc-500">${esc(p.label)}</span>`;
     return `<span class="mono">${esc(fmtVal(p.value))}</span>`;
   });
   el.paramCount.textContent = (params||[]).length;
@@ -609,6 +594,7 @@ function renderHardware(m){
   const rows = el.hwGrid.__rows || (el.hwGrid.__rows = new Map());
   const seen = new Set();
   for (const [k,v] of Object.entries(m)){
+    if (k==='k_angle' || k==='k_turn_speed' || k==='k_disp') continue; // shown as θ/ω/D in the Trajectory card
     seen.add(k);
     let rec = rows.get(k);
     if (!rec){
