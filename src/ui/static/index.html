@@ -397,7 +397,7 @@ function renderTraj(traj){
   let dec = pts;
   if (pts.length > 200){ const step=Math.ceil(pts.length/200); dec = pts.filter((_,i)=> i%step===0); }
   if (dec.length < 2){ updateKin(traj); return; }
-  // backend (_build_web_state) always sends the trail bounding box
+  // backend (WebBridge.build_full_state) always sends the trail bounding box
   const {min_x:minx, max_x:maxx, min_y:miny, max_y:maxy} = traj;
   const PAD=10, W=150, H=150;
   const mx=Math.max((maxx-minx)*0.1, 0.5), my=Math.max((maxy-miny)*0.1, 0.5);
@@ -464,7 +464,7 @@ function updatePhase(s){
 }
 function updateHeader(s){
   el.subject.textContent = (s && s.config && s.config['Subject ID']) || '--';
-  el.pattern.textContent = (s && s.config && s.config.Pattern) || '--';
+  el.pattern.textContent = (s && s.config && s.config['Experiment Pattern']) || '--';
 }
 let lastRingKey = '';
 function renderRing(s){
@@ -506,35 +506,60 @@ function syncList(container, items, renderVal){
   }
 }
 
+function sessionStr(cfg){
+  const n = cfg['Session Number'], t = cfg['Total Sessions'];
+  if (n == null) return '--';
+  return (t == null || t === -1) ? String(n) : `${n} / ${t}`;  // -1 = Manual mode
+}
 function renderCoreConfig(cfg){
   if (!cfg) return;
   const items = [
-    {id:'paradigm', label:'Paradigm', v:cfg.Paradigm},
-    {id:'pattern', label:'Pattern', v:cfg.Pattern},
+    {id:'paradigm', label:'Paradigm', v:cfg['Paradigm Class']},
+    {id:'pattern', label:'Pattern', v:cfg['Experiment Pattern']},
     {id:'subject', label:'Subject ID', v:cfg['Subject ID']},
-    {id:'session', label:'Session', v:(cfg['Session Start']!=null?cfg['Session Start']:'--') + (cfg['Session Total']!=null?' / '+cfg['Session Total']:'')},
+    {id:'session', label:'Session', v:sessionStr(cfg)},
     {id:'dist', label:'Viewing Dist (cm)', v:cfg['Viewing Distance (cm)']},
     {id:'sw', label:'Screen Width (cm)', v:cfg['Screen Width (cm)']},
-    {id:'res', label:'Resolution (W×H)', v:(cfg['Resolution W'] && cfg['Resolution H']) ? `${cfg['Resolution W']}×${cfg['Resolution H']}`:'--'},
+    {id:'res', label:'Resolution (W×H)', v:(cfg['Screen Width (px)'] && cfg['Screen Height (px)']) ? `${cfg['Screen Width (px)']}×${cfg['Screen Height (px)']}`:'--'},
     {id:'iti', label:'ITI Range (sec)', v:cfg['ITI Range (sec)']},
     {id:'isi', label:'ISI Range (sec)', v:cfg['ISI Range (sec)']},
     {id:'serial', label:'Serial Port', v:cfg['Serial Port']},
-    {id:'screen', label:'Screen ID', v:cfg['Screen ID']},
+    {id:'screen', label:'Screen ID', v:cfg['Stimulus Screen ID']},
     {id:'debug', label:'Debug Mode', v:cfg['Debug Mode']},
     {id:'exec', label:'Execution Mode', v:cfg['Execution Mode']},
   ];
   syncList(el.cfgCore, items, it=> esc(fmtVal(it.v)));
 }
-function renderParams(params){
-  const items = (params||[]).map(p=>({ id:p.key, label:p.label, v:p }));
+const KINEMATIC_KEYS = ['Trigger Duration (ms)','Trigger Dist (mm)','Trigger Angle (°)','Trigger Speed (units/s)'];
+function renderParams(s){
+  const schema = (s && s.paradigm_schema) || {};
+  const live = (s && s.paradigm_params_live) || {};
+  const items = [];
+  for (const [key, meta] of Object.entries(schema)){
+    items.push({ id:key, label:meta.label||key, type:meta.type, value:(key in live)?live[key]:null, choices:meta.choices });
+  }
+  for (const k of KINEMATIC_KEYS){
+    if (k in live){
+      const unit = (k.match(/\(([^)]+)\)/)||[])[1]||'';
+      items.push({ id:k, label:k, type:'kin', value:live[k], unit, enabled:live[k+' Enabled'] });
+    }
+  }
   syncList(el.paramList, items, p=>{
+    if (p.type==='info') return `<span class="text-zinc-500">${esc(p.label)}</span>`;
     if (p.type==='bool') return `<span class="chip ${p.value?'chip-on':'chip-off'}">${p.value?'ON':'OFF'}</span>`;
     if (p.type==='choice' && Array.isArray(p.choices))
       return `<span class="chip chip-choice" title="${esc(p.choices.join(' | '))}">${esc(fmtVal(p.value))}</span>`;
-    if (p.type==='info') return `<span class="text-zinc-500">${esc(p.label)}</span>`;
+    if (p.type==='kin'){
+      const num = parseFloat(p.value);
+      const disp = isNaN(num) ? p.value : fmtVal(num);
+      const hasEn = (p.id+' Enabled') in live;
+      const on = !!p.enabled;
+      const chip = hasEn ? ` <span class="chip ${on?'chip-on':'chip-off'}">${on?'ON':'OFF'}</span>` : '';
+      return `<span class="mono">${esc(disp)} ${esc(p.unit)}</span>${chip}`;
+    }
     return `<span class="mono">${esc(fmtVal(p.value))}</span>`;
   });
-  el.paramCount.textContent = (params||[]).length;
+  el.paramCount.textContent = items.length;
 }
 
 function renderCalibration(c){
@@ -673,14 +698,14 @@ function renderHigh(s){
 function renderLow(s){
   renderCoreConfig(s.config);
   updateHeader(s);  // header subject/pattern change only on config edits
-  renderParams(s.config && s.config.params);
+  renderParams(s);
   renderCalibration(s.calibration);
   renderLive(s.live);
 }
 
 function loop(now){
   if (pending){
-    if (highDirty){ running = !!pending.running; renderHigh(pending); highDirty=false; }
+    if (highDirty){ running = !!(pending.meta && pending.meta.running); renderHigh(pending); highDirty=false; }
     if (lowDirty && now-lastLow>150){ renderLow(pending); lastLow=now; lowDirty=false; }
   }
   requestAnimationFrame(loop);

@@ -5,7 +5,7 @@ FastAPI + uvicorn server that runs inside a dedicated daemon
 experiment. The dashboard pushes FullState dicts through a single ``mp.Queue``;
 this process drains it non-blockingly and broadcasts the latest snapshot to
 every connected browser at ~20 Hz over ``/ws/full_state``. Static files are
-served on the same port from ``src/core/static/``.
+served on the same port from ``src/ui/static/``.
 
 Dependencies (fastapi, uvicorn, websockets) were added to requirements.txt with
 explicit human approval — BOUNDARY.md's dependency lock permits that.
@@ -16,20 +16,22 @@ from __future__ import annotations
 import asyncio
 import json
 import math
-import os
 import queue
 import socket
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import FastAPI, WebSocket
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, HTMLResponse
 import uvicorn
 
 DEFAULT_PORT = 8000
 _SHUTDOWN_KEY = "__shutdown__"
 
-_STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+# Frontend asset lives in the UI layer — core stays headless.
+_STATIC_DIR = Path(__file__).resolve().parent.parent / "ui" / "static"
+_HTML_FILE = _STATIC_DIR / "index.html"
 
 
 def _json_default(o: Any) -> Any:
@@ -187,8 +189,18 @@ def _build_app(state_q: "queue.Queue", holder: dict) -> FastAPI:
         finally:
             manager.disconnect(ws)
 
-    # Static files last so the websocket route matches first.
-    app.mount("/", StaticFiles(directory=_STATIC_DIR, html=True), name="static")
+    # Serve the single-file frontend. File-not-found returns a graceful page
+    # instead of crashing the app at startup.
+    @app.get("/")
+    @app.get("/index.html")
+    async def index():
+        if not _HTML_FILE.is_file():
+            return HTMLResponse(
+                "<h1>Cercus web mirror: ui/static/index.html missing</h1>",
+                status_code=503,
+            )
+        return FileResponse(_HTML_FILE)
+
     return app
 
 

@@ -141,7 +141,7 @@ Dashboard 会在一个独立守护进程（`src/core/web_telemetry.py`，FastAPI
 ### 访问方式
 
 - 镜像地址显示在 Dashboard 状态栏中，例如 `Web: http://192.168.1.10:8000`。
-- 服务绑定 `0.0.0.0:8000`（或 8000 起第一个空闲端口），前端为单文件页面（`src/core/static/index.html`）。
+- 服务绑定 `0.0.0.0:8000`（或 8000 起第一个空闲端口），前端为单文件页面（`src/ui/static/index.html`）。
 - 网页头部提供 **Copy State JSON** 调试按钮，可一键复制当前完整状态。
 
 ### 显示内容

@@ -141,7 +141,7 @@ The dashboard runs a lightweight real-time **web mirror** of its own state in a 
 ### Access
 
 - The mirror URL is shown in the dashboard status bar, e.g. `Web: http://192.168.1.10:8000`.
-- The server binds `0.0.0.0:8000` (or the first free port at/above 8000) and serves a single-file frontend (`src/core/static/index.html`).
+- The server binds `0.0.0.0:8000` (or the first free port at/above 8000) and serves a single-file frontend (`src/ui/static/index.html`).
 - The browser page header has a **Copy State JSON** button for debugging.
 
 ### What it shows

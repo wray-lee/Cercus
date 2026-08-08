@@ -23,6 +23,7 @@ except ImportError:
 from src.models.paradigm import PARADIGM_REGISTRY
 from src.workers.stimulus_worker import worker_entry, create_ipc_queues
 from src.workers.calibration_worker import calibration_worker_entry
+from src.ui.web_bridge import WebBridge
 
 # Kinematic trigger params: (key, default, label). Rendered / serialized only
 # when Execution Mode is Kinematic.
@@ -638,148 +639,8 @@ class MasterDashboard:
                 pass
             self.web_state_q = None
 
-    def _build_web_state(self) -> dict:
-        """FullState snapshot mirroring every visible dashboard value."""
-        p_name = self.paradigm_var.get()
-        p_cls = PARADIGM_REGISTRY.get(p_name)
-        schema = p_cls.get_parameter_schema() if p_cls else {}
-        pv = self._param_vars
-
-        params: list = []
-        for key, meta in schema.items():
-            p_type = meta.get("type", "info")
-            entry = {
-                "key": key,
-                "type": p_type,
-                "label": meta.get("label", key),
-                "value": pv[key].get() if key in pv else meta.get("default"),
-            }
-            if meta.get("choices"):
-                entry["choices"] = meta["choices"]
-            params.append(entry)
-
-        # Kinematic trigger params (present only when Execution Mode is Kinematic)
-        for key, _, _ in _KINEMATIC_PARAMS:
-            if key in pv:
-                params.append(
-                    {"key": key, "type": "float", "label": key, "value": pv[key].get()}
-                )
-                en_key = f"{key} Enabled"
-                if en_key in pv:
-                    params.append(
-                        {
-                            "key": en_key,
-                            "type": "bool",
-                            "label": en_key,
-                            "value": pv[en_key].get(),
-                        }
-                    )
-
-        exec_mode = pv["Execution Mode"].get() if "Execution Mode" in pv else "Auto"
-        session_total = (
-            self._safe_int(self.session_total_var.get(), 2)
-            if exec_mode != "Manual"
-            else None
-        )
-        res_parts = [p.strip() for p in self.resolution_var.get().split(",")]
-        config: dict = {
-            "Paradigm": p_name,
-            "Pattern": self.pattern_var.get(),
-            "Subject ID": self.subject_var.get(),
-            "Session Start": self._safe_int(self.session_start_var.get(), 1),
-            "Viewing Distance (cm)": self._safe_float(
-                self.viewing_distance_var.get(), 30.0
-            ),
-            "Screen Width (cm)": self._safe_float(self.screen_width_cm_var.get(), 53.0),
-            "Resolution W": self._safe_int(res_parts[0], 3840),
-            "Resolution H": self._safe_int(res_parts[1], 1080)
-            if len(res_parts) > 1
-            else 1080,
-            "ITI Range (sec)": self.iti_range_var.get(),
-            "ISI Range (sec)": self.isi_range_var.get(),
-            "Serial Port": self.serial_port_var.get(),
-            "Screen ID": self._safe_int(self.screen_id_var.get(), 1),
-            "Debug Mode": self.debug_var.get(),
-            "Execution Mode": exec_mode,
-            "params": params,
-        }
-        if session_total is not None:  # Total Sessions is hidden in Manual mode
-            config["Session Total"] = session_total
-
-        cal = self._calib_panel
-        matrix: list = []
-        for r in range(3):
-            row: list = []
-            for c in range(3):
-                try:
-                    row.append(float(cal._matrix_vars[r][c].get()))
-                except (ValueError, IndexError):
-                    row.append(0.0)
-            matrix.append(row)
-
-        calibration = {
-            "is_active": cal._calib_active,
-            "current_axis": cal._current_axis,
-            "Radius": self._safe_float(cal.radius_var.get(), 30.0),
-            "Rotations": self._safe_float(cal.rotations_var.get(), 10.0),
-            "raw_dx": self._calib_raw.get("dx", 0),
-            "raw_dy": self._calib_raw.get("dy", 0),
-            "raw_dz": self._calib_raw.get("dz", 0),
-            "axis_results": dict(cal.axis_results),
-            "matrix": matrix,
-            "status": cal.status_lbl.cget("text"),
-            "status_color": cal.status_lbl.cget("text_color"),
-        }
-
-        tel = self._last_telemetry or {}
-        ui_metrics = tel.get("ui_metrics", {})
-        terminal = self._worker_terminal_status
-        worker_alive = self.worker_process is not None and self.worker_process.is_alive()
-        if worker_alive:
-            worker_status = "running"
-        elif terminal:
-            worker_status = terminal
-        else:
-            worker_status = "idle"
-
-        live = {
-            "phase": tel.get("phase", "IDLE"),
-            "ui_color": tel.get("ui_color", "gray"),
-            "session_num": tel.get("session_num", "—"),
-            "trial_idx": tel.get("trial_idx", "—"),
-            "total_trials": tel.get("total_trials", "—"),
-            "total_sessions": session_total,
-            "hardware_state": ui_metrics,
-            "status_label": self._status_text,
-            "status_color": self.status_label.cget("text_color"),
-            "controls": {
-                "start": self.start_btn.cget("state"),
-                "stop": self.stop_btn.cget("state"),
-            },
-            "worker_status": worker_status,
-            "worker_error": self._worker_terminal_error,
-        }
-
-        return {
-            "running": worker_alive or cal._calib_active,
-            "config": config,
-            "calibration": calibration,
-            "live": live,
-            "visual": {
-                "ui_twin": self._last_ui_twin,
-                "trajectory": {
-                    "trail_points": self._trail_points[-1000:],
-                    "min_x": self._trail_min_x,
-                    "max_x": self._trail_max_x,
-                    "min_y": self._trail_min_y,
-                    "max_y": self._trail_max_y,
-                    "angle": self._trail_last_angle,
-                    "k_angle": ui_metrics.get("k_angle"),
-                    "k_turn_speed": ui_metrics.get("k_turn_speed"),
-                    "k_disp": ui_metrics.get("k_disp"),
-                },
-            },
-        }
+    # NOTE: FullState serialization now lives in src/ui/web_bridge.py (WebBridge).
+    # dashboard.py stays UI-only; _push_web_state calls WebBridge.build_full_state.
 
     def _put_web_state(self, state: dict):
         """Put a state frame, dropping the oldest on backpressure so the freshest
@@ -818,7 +679,9 @@ class MasterDashboard:
         if now - self._web_state_last_push < 0.05:
             return
         self._web_state_last_push = now
-        self._put_web_state(self._build_web_state())
+        self._put_web_state(
+            WebBridge.build_full_state(self, self._last_telemetry)
+        )
 
     # ------------------------------------------------------------------
     # Widget construction
@@ -1363,7 +1226,8 @@ class MasterDashboard:
             os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         )
         out_dir = os.path.join(root_dir, "data")
-        os.makedirs(out_dir, exist_ok=True)
+        if not os.path.isdir(out_dir):
+            os.makedirs(out_dir)
 
         p_name = self.paradigm_var.get()
 
