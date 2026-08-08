@@ -10,7 +10,7 @@
 
 Cercus 强制执行单向数据流与功能隔离，包含以下四个子系统：
 
-- **主控中枢** (`src/ui/dashboard.py`)：非阻塞 GUI，负责参数装配、动态表单生成与实时状态监控。
+- **主控中枢** (`src/ui/dashboard.py`)：非阻塞 GUI，负责参数装配、动态表单生成与实时状态监控。同时派生一个守护**网页镜像**进程（`src/core/web_telemetry.py`），通过 WebSocket 向局域网内任意浏览器广播 Dashboard 状态。
 - **纯逻辑计算核** (`src/models/paradigm.py`)：数学模型层。基于时间差与硬件反馈输出标准化渲染指令流。
 - **无状态渲染引擎** (`src/core/render.py`)：执行基础几何绘制指令（支持 `circle`, `rect`, `element_array` 等渲染类型），不维护状态。
 - **异步硬件驱动** (`src/core/hardware.py`)：处理高频传感器数据采集与触发信号下发。
@@ -133,6 +133,34 @@ PARADIGM_REGISTRY: Dict[str, type] = {
 2. **`{Subject}_session_{n}_kinematics.csv`** — 高频闭环遥测矩阵。列：`sys_time`、`ard_time`、`dx`、`dy`、`dz`、`stim_state`、`global_trial_id`。
 
 两个文件共享 `global_trial_id` 作为关联键，用于将试次级事件与帧级运动学数据交叉引用。
+
+## 7. 网页遥测镜像
+
+Dashboard 会在一个独立守护进程（`src/core/web_telemetry.py`，FastAPI + uvicorn）中运行一个轻量**实时网页镜像**，将其自身状态推送到浏览器。同一局域网内的任何设备都可打开镜像页面 —— 无需先运行实验，配置与校准状态即刻可见。
+
+### 访问方式
+
+- 镜像地址显示在 Dashboard 状态栏中，例如 `Web: http://192.168.1.10:8000`。
+- 服务绑定 `0.0.0.0:8000`（或 8000 起第一个空闲端口），前端为单文件页面（`src/core/static/index.html`）。
+- 网页头部提供 **Copy State JSON** 调试按钮，可一键复制当前完整状态。
+
+### 显示内容
+
+- **实时状态**：相位徽章、会话/试次进度（分段条）、完整硬件状态网格、工作进程状态与 Dashboard 状态行。
+- **刺激孪生视图**：400×150 画布重放刺激渲染指令（`ui_twin`）。
+- **运动轨迹**：150×150 画布绘制近期路径与当前朝向箭头，并显示 θ/ω/D 运动学指标。
+- **校准**：实时原始 DX/DY/DZ 里程计、逐轴结果清单与手动 3×3 矩阵。
+- **配置**：全部参数，含动态范式参数与运动学触发阈值。
+
+### 数据协议
+
+Dashboard 以最高 20 Hz 频率通过 WebSocket 端点 `/ws/full_state` 推送完整 `full_state` JSON 快照（`config` / `calibration` / `live` / `visual`）。前端通过 `requestAnimationFrame` 分批渲染，仅重写发生变化的 DOM 值。
+
+### 注意事项
+
+- 浏览器与实验机须处于同一网络。
+- 前端通过 CDN 加载 Tailwind / Lucide / Google Fonts；在完全离线的网络中布局会降级，但数据仍实时更新。
+- 网页进程为尽力而为：崩溃时绝不影响正在运行的实验，并会在约 2 秒内自愈。
 
 ---
 

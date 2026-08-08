@@ -10,7 +10,7 @@
 
 Cercus enforces strict unidirectional data flow and functional isolation between four subsystems:
 
-- **Master Dashboard** (`src/ui/dashboard.py`): A non-blocking GUI for parameter configuration, dynamic form generation, and real-time status monitoring.
+- **Master Dashboard** (`src/ui/dashboard.py`): A non-blocking GUI for parameter configuration, dynamic form generation, and real-time status monitoring. It also spawns a daemon **web mirror** (`src/core/web_telemetry.py`) that broadcasts the dashboard state to any browser on the LAN over WebSocket.
 - **Pure Logic Core** (`src/models/paradigm.py`): A mathematical modeling layer that processes time deltas and hardware feedback to output standardized rendering instruction streams.
 - **Stateless Renderer** (`src/core/render.py`): Executes basic geometric drawing instructions (`circle`, `rect`, `element_array`) without maintaining state.
 - **Asynchronous Hardware Daemon** (`src/core/hardware.py`): Handles high-frequency sensor data acquisition and TTL trigger signal dispatch.
@@ -133,6 +133,34 @@ Dual-track record files are automatically generated in the `data/` directory, al
 2. **`{Subject}_session_{n}_kinematics.csv`** — High-frequency closed-loop telemetry. Columns: `sys_time`, `ard_time`, `dx`, `dy`, `dz`, `stim_state`, `global_trial_id`.
 
 Both files share `global_trial_id` as the join key for cross-referencing trial-level events with frame-level kinematics.
+
+## 7. Web Telemetry Mirror
+
+The dashboard runs a lightweight real-time **web mirror** of its own state in a separate daemon process (`src/core/web_telemetry.py`, FastAPI + uvicorn). Any device on the same LAN can open the mirror in a browser — no experiment run is required; configuration and calibration are visible immediately.
+
+### Access
+
+- The mirror URL is shown in the dashboard status bar, e.g. `Web: http://192.168.1.10:8000`.
+- The server binds `0.0.0.0:8000` (or the first free port at/above 8000) and serves a single-file frontend (`src/core/static/index.html`).
+- The browser page header has a **Copy State JSON** button for debugging.
+
+### What it shows
+
+- **Live status**: phase badge, session + trial progress (segmented bar), full hardware-state grid, worker status, and the dashboard status line.
+- **Stimulus twin**: a 400×150 canvas replaying the stimulus render instructions (`ui_twin`).
+- **Trajectory**: a 150×150 canvas plotting the recent path with the current heading arrow, plus θ/ω/D kinematics.
+- **Calibration**: live raw DX/DY/DZ odometers, per-axis results checklist, and the manual 3×3 matrix.
+- **Config**: all parameters, including dynamic paradigm params and kinematic trigger thresholds.
+
+### Data protocol
+
+The dashboard pushes a complete `full_state` JSON snapshot (`config`, `calibration`, `live`, `visual`) at up to 20 Hz over the WebSocket endpoint `/ws/full_state`. The frontend batches rendering via `requestAnimationFrame` and only rewrites changed DOM values.
+
+### Notes
+
+- The browser and the experiment PC must be on the same network.
+- The frontend loads Tailwind / Lucide / Google Fonts from CDNs; on a fully offline network the layout degrades but data still updates.
+- The web process is best-effort: a crash never affects the running experiment, and it self-heals within ~2 s.
 
 ---
 
