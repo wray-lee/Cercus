@@ -167,11 +167,11 @@ void parseSerialPackets()
             int valveIdx = -1;
             if (dir == 'L' || dir == 'l')
             {
-                valveIdx = 5;
+                valveIdx = 4;
             }
             else if (dir == 'R' || dir == 'r')
             {
-                valveIdx = 7;
+                valveIdx = 6;
             }
             else if (dir >= '0' && dir <= '7')
             {
