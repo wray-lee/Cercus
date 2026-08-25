@@ -1799,25 +1799,35 @@ class MasterDashboard:
         radius_canvas = min(100, max(2, radius_ratio * 100))
         centre_y = 75
 
-        if side in ["left", "both", "—"]:
+        if side in ["center", "single"]:
             self.canvas.create_oval(
-                100 - radius_canvas,
+                200 - radius_canvas,
                 centre_y - radius_canvas,
-                100 + radius_canvas,
+                200 + radius_canvas,
                 centre_y + radius_canvas,
                 outline="white",
                 width=1,
             )
-        if side in ["right", "both", "—"]:
-            self.canvas.create_oval(
-                300 - radius_canvas,
-                centre_y - radius_canvas,
-                300 + radius_canvas,
-                centre_y + radius_canvas,
-                outline="white",
-                width=1,
-            )
-        self.canvas.create_line(200, 0, 200, 150, fill="#333333", dash=(4, 2))
+        else:
+            if side in ["left", "both", "—"]:
+                self.canvas.create_oval(
+                    100 - radius_canvas,
+                    centre_y - radius_canvas,
+                    100 + radius_canvas,
+                    centre_y + radius_canvas,
+                    outline="white",
+                    width=1,
+                )
+            if side in ["right", "both", "—"]:
+                self.canvas.create_oval(
+                    300 - radius_canvas,
+                    centre_y - radius_canvas,
+                    300 + radius_canvas,
+                    centre_y + radius_canvas,
+                    outline="white",
+                    width=1,
+                )
+            self.canvas.create_line(200, 0, 200, 150, fill="#333333", dash=(4, 2))
 
     # ------------------------------------------------------------------
     # Trajectory panel

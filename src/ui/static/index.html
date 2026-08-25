@@ -377,14 +377,18 @@ function renderTwin(cfg){
     for (const item of cfg){ try{ drawCmd(ctx, item); }catch(e){} }
   } else if (cfg && typeof cfg==='object'){
     const side=cfg.side||'—', rr=Math.max(0.02, cfg.radius_ratio||0), r=Math.min(100, rr*100);
-    if (side==='left'||side==='both'||side==='—'){
-      ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.beginPath(); ctx.ellipse(100,75,r,r,0,0,Math.PI*2); ctx.stroke();
+    if (side==='center'||side==='single'){
+      ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.beginPath(); ctx.ellipse(200,75,r,r,0,0,Math.PI*2); ctx.stroke();
+    } else {
+      if (side==='left'||side==='both'||side==='—'){
+        ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.beginPath(); ctx.ellipse(100,75,r,r,0,0,Math.PI*2); ctx.stroke();
+      }
+      if (side==='right'||side==='both'||side==='—'){
+        ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.beginPath(); ctx.ellipse(300,75,r,r,0,0,Math.PI*2); ctx.stroke();
+      }
+      ctx.strokeStyle='#333'; ctx.lineWidth=1; ctx.setLineDash([4,2]);
+      ctx.beginPath(); ctx.moveTo(200,0); ctx.lineTo(200,150); ctx.stroke(); ctx.setLineDash([]);
     }
-    if (side==='right'||side==='both'||side==='—'){
-      ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.beginPath(); ctx.ellipse(300,75,r,r,0,0,Math.PI*2); ctx.stroke();
-    }
-    ctx.strokeStyle='#333'; ctx.lineWidth=1; ctx.setLineDash([4,2]);
-    ctx.beginPath(); ctx.moveTo(200,0); ctx.lineTo(200,150); ctx.stroke(); ctx.setLineDash([]);
   }
 }
 
