@@ -1,5 +1,10 @@
 # BOUNDARY.md — Global Topology Constraints
 
+## Git Identity & Commit Boundary (CRITICAL)
+- **Author / Committer**: MUST be `wray-lee <i@wray7.top>` (verified GitHub primary email).
+- **Rule**: Never override local `.git/config` with secondary or unlinked emails (e.g. `wray.lee@outlook.com`).
+- **Verification**: Always ensure `git config user.email` returns `i@wray7.top` before committing.
+
 ## Process Physical Isolation
 
 - `dashboard.py` (main controller) and `stimulus_worker.py` / `calibration_worker.py` (worker nodes) MUST NOT share memory or global variables.
