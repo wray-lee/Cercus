@@ -1018,29 +1018,29 @@ class MasterDashboard:
         verdict_outer.grid(row=2, column=0, sticky="ew", pady=(0, 0), padx=5)
 
         verdict_header = ctk.CTkFrame(verdict_outer, fg_color="transparent")
-        verdict_header.pack(fill="x", padx=12, pady=(8, 2))
+        verdict_header.pack(fill="x", padx=12, pady=(4, 1))
         ctk.CTkLabel(
             verdict_header, text="Trial Verdicts",
-            font=("Segoe UI", 12, "bold"), text_color="gray70",
+            font=("Segoe UI", 11, "bold"), text_color="gray70",
         ).pack(side="left")
         self._lbl_verdict_summary = ctk.CTkLabel(
             verdict_header, text="",
-            font=("Consolas", 11), text_color="gray50",
+            font=("Consolas", 10), text_color="gray50",
         )
         self._lbl_verdict_summary.pack(side="right")
 
         tree_frame = ctk.CTkFrame(verdict_outer, fg_color="transparent")
-        tree_frame.pack(fill="x", padx=8, pady=(0, 8))
+        tree_frame.pack(fill="x", padx=8, pady=(0, 4))
 
         style = tk.ttk.Style()
         style.theme_use("clam")
         style.configure("Verdict.Treeview",
             background="#1a1a1d", foreground="#E5E7EB", fieldbackground="#1a1a1d",
-            borderwidth=0, font=("Consolas", 11), rowheight=24,
+            borderwidth=0, font=("Consolas", 10), rowheight=20,
         )
         style.configure("Verdict.Treeview.Heading",
             background="#262629", foreground="#9CA3AF",
-            font=("Segoe UI", 10, "bold"), borderwidth=0,
+            font=("Segoe UI", 9, "bold"), borderwidth=0,
         )
         style.map("Verdict.Treeview",
             background=[("selected", "#2a2a2e")],
@@ -1050,7 +1050,7 @@ class MasterDashboard:
         cols = ("num", "side", "verdict", "disp", "angle")
         self._verdict_tree = tk.ttk.Treeview(
             tree_frame, columns=cols, show="headings",
-            height=6, style="Verdict.Treeview",
+            height=2, style="Verdict.Treeview",
         )
         self._verdict_tree.heading("num", text="#")
         self._verdict_tree.heading("side", text="Side")
