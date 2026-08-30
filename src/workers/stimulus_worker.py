@@ -527,6 +527,18 @@ class GenericWorker:
                     # [新增] 精确记录试次终止时间
                     logger.log_event("trial_stop", clock.getTime())
 
+                    # [新增] 试次后行为判定
+                    verdict = self.paradigm.classify_response(
+                        self.kinematic_engine, trial, clock.getTime() - t_trial
+                    )
+                    logger.log_event("trial_verdict", clock.getTime(), **verdict)
+                    self._push({
+                        "action": "trial_verdict",
+                        "trial_idx": t_idx + 1,
+                        "side": trial.get("screen_side") or trial.get("direction") or trial.get("side", "—"),
+                        **verdict,
+                    }, force=True)
+
                 # --- ISI ---
                 if total_sessions == -1 or s_idx < total_sessions - 1:
                     isi_raw = self.config.get("ISI Range (sec)", "0-0")

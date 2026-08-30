@@ -53,6 +53,9 @@
   .chip-on{ background:rgba(163,230,53,.14); color:var(--lime); border:1px solid rgba(163,230,53,.35); }
   .chip-off{ background:rgba(113,113,122,.14); color:var(--muted); border:1px solid rgba(113,113,122,.3); }
   .chip-choice{ background:rgba(34,211,238,.1); color:var(--accent); border:1px solid rgba(34,211,238,.3); }
+  .chip-escape{ background:rgba(248,113,113,.14); color:var(--err); border:1px solid rgba(248,113,113,.35); }
+  .chip-startle{ background:rgba(251,146,60,.14); color:var(--warn); border:1px solid rgba(251,146,60,.35); }
+  .chip-none{ background:rgba(113,113,122,.14); color:var(--muted); border:1px solid rgba(113,113,122,.3); }
 
   .seg{ height:7px; border-radius:2px; background:#26262a; }
   .seg.on{ background:linear-gradient(90deg,#22D3EE,#3EC5E8); }
@@ -253,6 +256,28 @@
       </div>
     </section>
 
+    <!-- ======================== TRIAL VERDICTS (12) ====================== -->
+    <section class="c-12 card p-5 flex flex-col gap-3">
+      <div class="flex items-center justify-between">
+        <div class="sec-title"><i data-lucide="clipboard-check"></i> Trial Verdicts</div>
+        <span id="verdictSummary" class="mono text-[11px] text-zinc-500"></span>
+      </div>
+      <div class="overflow-y-auto max-h-[200px] -mr-1 pr-1">
+        <table class="w-full text-left">
+          <thead class="sticky top-0 bg-[#17171b] z-10">
+            <tr class="text-[10px] uppercase tracking-wider text-zinc-500 border-b border-[#1d1d20]">
+              <th class="py-2 px-2 w-12 text-center">#</th>
+              <th class="py-2 px-2 w-20 text-center">Side</th>
+              <th class="py-2 px-2 w-28 text-center">Verdict</th>
+              <th class="py-2 px-2 w-20 text-right">Δ mm</th>
+              <th class="py-2 px-2 w-20 text-right">θ °</th>
+            </tr>
+          </thead>
+          <tbody id="verdictBody" class="mono text-[12px]"></tbody>
+        </table>
+      </div>
+    </section>
+
   </div>
 
   <div class="text-center text-[10px] text-zinc-700 mt-5 tracking-wider uppercase">
@@ -281,6 +306,7 @@ const el = {
   trialText:$('trialText'), segBar:$('segBar'), statusLabel:$('statusLabel'), hwGrid:$('hwGrid'),
   twin:$('twinCanvas'), twinSide:$('twinSide'), traj:$('trajCanvas'),
   kinAngle:$('kinAngle'), kinTurn:$('kinTurn'), kinDisp:$('kinDisp'),
+  verdictBody:$('verdictBody'), verdictSummary:$('verdictSummary'),
 };
 const matrixCells = ['m00','m01','m02','m10','m11','m12','m20','m21','m22'].map($);
 let lastMatrixSig = '';
@@ -705,6 +731,45 @@ function renderLow(s){
   renderParams(s);
   renderCalibration(s.calibration);
   renderLive(s.live);
+  renderVerdicts(s.verdicts, s.verdict_summary);
+}
+
+/* ---------- verdict table ---------- */
+let lastRenderedVerdictCount = -1;
+const VERDICT_CHIP = {
+  escape: 'chip chip-escape',
+  startle: 'chip chip-startle',
+  no_response: 'chip chip-none',
+};
+function renderVerdicts(verdicts, summary){
+  const arr = verdicts || [];
+  if (arr.length === lastRenderedVerdictCount) return; // skip idempotent rebuild
+  lastRenderedVerdictCount = arr.length;
+  const body = el.verdictBody;
+  body.innerHTML = '';
+  for (const v of arr){
+    const tr = document.createElement('tr');
+    tr.className = 'border-b border-[#1d1d20]';
+    const cls = VERDICT_CHIP[v.response] || 'chip chip-none';
+    tr.innerHTML =
+      `<td class="py-1.5 px-2 text-center text-zinc-400">${esc(fmtVal(v.trial_idx))}</td>`+
+      `<td class="py-1.5 px-2 text-center text-zinc-300">${esc(fmtVal(v.side))}</td>`+
+      `<td class="py-1.5 px-2 text-center"><span class="${cls}">${esc(v.response||'--')}</span></td>`+
+      `<td class="py-1.5 px-2 text-right text-zinc-300">${fmtVal(v.cum_disp)}</td>`+
+      `<td class="py-1.5 px-2 text-right text-zinc-300">${fmtVal(v.cum_dz)}</td>`;
+    body.appendChild(tr);
+  }
+  // auto-scroll to bottom
+  const container = body.closest('.overflow-y-auto');
+  if (container) container.scrollTop = container.scrollHeight;
+  // summary
+  if (summary && el.verdictSummary){
+    const parts = [];
+    if (summary.escape) parts.push(`${summary.escape} escape`);
+    if (summary.startle) parts.push(`${summary.startle} startle`);
+    if (summary.no_response) parts.push(`${summary.no_response} no_resp`);
+    el.verdictSummary.textContent = parts.join(' · ');
+  }
 }
 
 function loop(now){

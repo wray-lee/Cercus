@@ -561,6 +561,10 @@ class MasterDashboard:
         self._trail_min_y: float = 0.0
         self._trail_max_y: float = 0.0
         self._trail_last_angle: float = 0.0
+
+        # Verdict history (current session)
+        self._verdict_history: List[Dict[str, Any]] = []
+        self._verdict_last_session: int = -1
         self._create_widgets()
         self._load_default_config()
         self.refresh_dynamic_parameters()
@@ -765,8 +769,9 @@ class MasterDashboard:
 
         main_frame.grid_rowconfigure(0, weight=1)  # top_row gets vertical stretch
         main_frame.grid_rowconfigure(1, weight=0)  # status_frame fixed height
-        main_frame.grid_rowconfigure(2, weight=0)  # status_bar fixed height
-        main_frame.grid_rowconfigure(3, weight=0)  # ctrl_frame fixed height
+        main_frame.grid_rowconfigure(2, weight=0)  # verdict_frame
+        main_frame.grid_rowconfigure(3, weight=0)  # status_bar fixed height
+        main_frame.grid_rowconfigure(4, weight=0)  # ctrl_frame fixed height
         main_frame.grid_columnconfigure(0, weight=1)
 
         top_row = ctk.CTkFrame(main_frame, fg_color="transparent")
@@ -1006,10 +1011,71 @@ class MasterDashboard:
         )
         self._lbl_kin_disp.pack(side="left")
 
+        # --- Verdict table (scrollable trial history) ---
+        verdict_outer = ctk.CTkFrame(
+            main_frame, fg_color=("gray90", "gray13"), corner_radius=10
+        )
+        verdict_outer.grid(row=2, column=0, sticky="ew", pady=(0, 0), padx=5)
+
+        verdict_header = ctk.CTkFrame(verdict_outer, fg_color="transparent")
+        verdict_header.pack(fill="x", padx=12, pady=(8, 2))
+        ctk.CTkLabel(
+            verdict_header, text="Trial Verdicts",
+            font=("Segoe UI", 12, "bold"), text_color="gray70",
+        ).pack(side="left")
+        self._lbl_verdict_summary = ctk.CTkLabel(
+            verdict_header, text="",
+            font=("Consolas", 11), text_color="gray50",
+        )
+        self._lbl_verdict_summary.pack(side="right")
+
+        tree_frame = ctk.CTkFrame(verdict_outer, fg_color="transparent")
+        tree_frame.pack(fill="x", padx=8, pady=(0, 8))
+
+        style = tk.ttk.Style()
+        style.theme_use("clam")
+        style.configure("Verdict.Treeview",
+            background="#1a1a1d", foreground="#E5E7EB", fieldbackground="#1a1a1d",
+            borderwidth=0, font=("Consolas", 11), rowheight=24,
+        )
+        style.configure("Verdict.Treeview.Heading",
+            background="#262629", foreground="#9CA3AF",
+            font=("Segoe UI", 10, "bold"), borderwidth=0,
+        )
+        style.map("Verdict.Treeview",
+            background=[("selected", "#2a2a2e")],
+            foreground=[("selected", "#E5E7EB")],
+        )
+
+        cols = ("num", "side", "verdict", "disp", "angle")
+        self._verdict_tree = tk.ttk.Treeview(
+            tree_frame, columns=cols, show="headings",
+            height=6, style="Verdict.Treeview",
+        )
+        self._verdict_tree.heading("num", text="#")
+        self._verdict_tree.heading("side", text="Side")
+        self._verdict_tree.heading("verdict", text="Verdict")
+        self._verdict_tree.heading("disp", text="Δ mm")
+        self._verdict_tree.heading("angle", text="θ °")
+        self._verdict_tree.column("num", width=50, anchor="center")
+        self._verdict_tree.column("side", width=80, anchor="center")
+        self._verdict_tree.column("verdict", width=120, anchor="center")
+        self._verdict_tree.column("disp", width=80, anchor="center")
+        self._verdict_tree.column("angle", width=80, anchor="center")
+
+        self._verdict_tree.tag_configure("escape", foreground="#F87171")
+        self._verdict_tree.tag_configure("startle", foreground="#FB923C")
+        self._verdict_tree.tag_configure("no_response", foreground="#6B7280")
+
+        vsb = tk.ttk.Scrollbar(tree_frame, orient="vertical", command=self._verdict_tree.yview)
+        self._verdict_tree.configure(yscrollcommand=vsb.set)
+        self._verdict_tree.pack(side="left", fill="x", expand=True)
+        vsb.pack(side="right", fill="y")
+
         # --- Status bar (bento-style bottom bar) ---
         self.status_bar = ctk.CTkFrame(main_frame, fg_color="#1E1E21", corner_radius=10,
                                        height=32, border_width=1, border_color="#2A2A2E")
-        self.status_bar.grid(row=2, column=0, sticky="ew", pady=(10, 0), padx=5)
+        self.status_bar.grid(row=3, column=0, sticky="ew", pady=(10, 0), padx=5)
 
         left = ctk.CTkFrame(self.status_bar, fg_color="transparent")
         left.pack(side="left", fill="both", expand=True, padx=(12, 0))
@@ -1037,7 +1103,7 @@ class MasterDashboard:
 
         # --- Control panel ---
         ctrl_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        ctrl_frame.grid(row=3, column=0, sticky="ew", pady=20)
+        ctrl_frame.grid(row=4, column=0, sticky="ew", pady=20)
         self.start_btn = ctk.CTkButton(
             ctrl_frame,
             text="Start Experiment",
@@ -1639,6 +1705,7 @@ class MasterDashboard:
             # Drain queue in a single pass, keeping only the latest frame per category
             latest_telemetry = None
             terminal_event = None
+            verdict_events = []
 
             while not self.telemetry_queue.empty():
                 try:
@@ -1647,6 +1714,8 @@ class MasterDashboard:
 
                     if action == "telemetry":
                         latest_telemetry = data
+                    elif action == "trial_verdict":
+                        verdict_events.append(data)
                     elif action in ["worker_done", "worker_abort", "worker_error"]:
                         terminal_event = data
                 except (queue.Empty, ValueError, OSError, EOFError):
@@ -1655,6 +1724,14 @@ class MasterDashboard:
             if latest_telemetry:
                 self._update_telemetry_ui(latest_telemetry)
                 self._draw_twin(latest_telemetry)
+                # Clear verdict table on session change
+                sess = latest_telemetry.get("session_num")
+                if sess is not None and sess != self._verdict_last_session:
+                    self._verdict_last_session = sess
+                    self._clear_verdict_table()
+
+            for vd in verdict_events:
+                self._append_verdict(vd)
 
             if terminal_event:
                 action = terminal_event.get("action")
@@ -1974,6 +2051,56 @@ class MasterDashboard:
         self._lbl_kin_turn.configure(text="ω: —")
         self._lbl_kin_disp.configure(text="D: —")
 
+    # ------------------------------------------------------------------
+    # Verdict table helpers
+    # ------------------------------------------------------------------
+    def _append_verdict(self, data: dict):
+        """Insert one verdict row into the Treeview and update summary."""
+        v = {
+            "trial_idx": data.get("trial_idx", "?"),
+            "side": data.get("side", "—"),
+            "response": data.get("response", "?"),
+            "cum_disp": data.get("cum_disp", 0.0),
+            "cum_dz": data.get("cum_dz", 0.0),
+        }
+        self._verdict_history.append(v)
+        tag = v["response"] if v["response"] in ("escape", "startle", "no_response") else ""
+        self._verdict_tree.insert(
+            "", "end",
+            values=(v["trial_idx"], v["side"], v["response"],
+                    f"{v['cum_disp']:.1f}", f"{v['cum_dz']:.1f}"),
+            tags=(tag,),
+        )
+        self._verdict_tree.yview_moveto(1.0)  # auto-scroll to latest
+        self._update_verdict_summary()
+
+    def _clear_verdict_table(self):
+        """Clear all verdict rows (on session change or experiment end)."""
+        self._verdict_history.clear()
+        for item in self._verdict_tree.get_children():
+            self._verdict_tree.delete(item)
+        self._lbl_verdict_summary.configure(text="")
+
+    def _compute_verdict_counts(self) -> dict:
+        counts = {"escape": 0, "startle": 0, "no_response": 0}
+        for v in self._verdict_history:
+            r = v.get("response", "")
+            if r in counts:
+                counts[r] += 1
+        return counts
+
+    def _update_verdict_summary(self):
+        counts = self._compute_verdict_counts()
+        parts = []
+        if counts["escape"]:
+            parts.append(f"{counts['escape']} escape")
+        if counts["startle"]:
+            parts.append(f"{counts['startle']} startle")
+        if counts["no_response"]:
+            parts.append(f"{counts['no_response']} no_resp")
+        self._lbl_verdict_summary.configure(text=" · ".join(parts))
+
+
     def _reset_ui(self, status: str, color: str):
         self.start_btn.configure(state="normal")
         self.stop_btn.configure(state="disabled")
@@ -1988,6 +2115,7 @@ class MasterDashboard:
         self.lbl_hw_val.configure(text="Disconnected", text_color="gray")
         self.canvas.delete("all")
         self._reset_trajectory()
+        self._clear_verdict_table()
         self._calib_panel.reset()
         self._calib_panel.set_enabled(True)
 

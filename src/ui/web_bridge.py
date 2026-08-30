@@ -134,6 +134,11 @@ class WebBridge:
     def build_full_state(dash, telemetry=None) -> dict:
         live = WebBridge.get_live_state(dash, telemetry)
         cal_active = bool(dash._calib_panel._calib_active)
+
+        # Verdict summary for web mirror
+        verdicts = list(getattr(dash, '_verdict_history', []))
+        counts = getattr(dash, '_compute_verdict_counts', lambda: {"escape": 0, "startle": 0, "no_response": 0})()
+
         return {
             "config": WebBridge.get_config_snapshot(dash),
             "paradigm_params_live": WebBridge.get_paradigm_params_live(dash),
@@ -141,5 +146,7 @@ class WebBridge:
             "calibration": WebBridge.get_calibration_state(dash),
             "live": live,
             "visual": WebBridge.get_visual_state(dash, telemetry),
+            "verdicts": verdicts,
+            "verdict_summary": counts,
             "meta": {"running": live["worker_status"] == "running" or cal_active},
         }

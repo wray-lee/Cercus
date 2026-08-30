@@ -120,6 +120,36 @@ class BaseParadigm(ABC):
             })
         return cmds
 
+    def classify_response(self, engine, trial_context: dict, trial_duration: float) -> dict:
+        """Post-trial behavioral classification from accumulated kinematics.
+
+        Default three-way: escape / startle / no_response.
+        Override per paradigm for tuned thresholds.
+        """
+        disp = engine.cum_disp
+        angle = abs(engine.cum_dz)
+        speed = engine.move_speed
+
+        cfg = getattr(self, 'config', {})
+        escape_mm = float(cfg.get('escape_threshold_mm', 15.0))
+        escape_deg = float(cfg.get('escape_threshold_deg', 30.0))
+        startle_mm = float(cfg.get('startle_threshold_mm', 5.0))
+        startle_deg = float(cfg.get('startle_threshold_deg', 10.0))
+
+        if disp > escape_mm or angle > escape_deg:
+            response = "escape"
+        elif disp > startle_mm or angle > startle_deg:
+            response = "startle"
+        else:
+            response = "no_response"
+
+        return {
+            "response": response,
+            "cum_disp": round(disp, 2),
+            "cum_dz": round(angle, 2),
+            "peak_speed": round(speed, 2),
+        }
+
     @abstractmethod
     def process_frame(
         self, elapsed_time: float, trial_context: dict, hw_telemetry: dict
