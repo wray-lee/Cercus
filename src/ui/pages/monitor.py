@@ -6,7 +6,7 @@ from src.ui.components.twin_preview import twin_preview_canvas, update_twin
 from src.ui.components.verdict_table import verdict_table
 from src.ui.components.hw_status import hw_status_panel
 from src.ui.components.calibration import calibration_display
-from src.ui.components.common import fmt_val, color_pill, update_worker_badge
+from src.ui.components.status_strip import build_status_strip, create_tick
 
 
 def build_monitor(state, controller):
@@ -14,89 +14,92 @@ def build_monitor(state, controller):
     from src.ui.theme import apply_theme
     apply_theme()
 
-    with ui.column().classes('w-full max-w-5xl mx-auto p-4 gap-3'):
-        # Header
-        with ui.row().classes('w-full items-center gap-3'):
-            ui.label('Cercus Monitor').classes('text-lg font-bold text-cyan-400')
-            phase_pill = ui.label('IDLE').classes('mono text-xs font-bold px-2.5 py-1 rounded-full bg-zinc-700 text-zinc-900')
-            sess_label = ui.label('session —').classes('mono text-xs text-zinc-400')
-            trial_label = ui.label('trial — / —').classes('mono text-xs text-zinc-400')
-            worker_badge = ui.label('IDLE').classes('mono text-[9px] font-bold px-2 py-0.5 rounded-full bg-zinc-700 text-zinc-400')
-            status_label = ui.label('Ready').classes('text-xs text-zinc-400 ml-auto')
+    with ui.column().classes('w-full p-4 gap-3').style('min-height: 100vh;'):
+        # ── Header + shared status strip ──
+        ui.label('Cercus Monitor').classes('text-sm font-bold mb-1').style('color: var(--accent);')
+        strip = build_status_strip(show_subject=False)
 
-        # Config snapshot (read-only)
-        with ui.card().classes('w-full'):
-            ui.label('Configuration').classes('text-sm font-semibold text-zinc-300 mb-1')
-            config_grid = ui.element('div').classes('grid grid-cols-3 gap-2 text-xs')
-
-        # Visuals row
-        with ui.row().classes('w-full gap-3'):
-            # Twin preview
-            with ui.card().classes('flex-grow'):
-                ui.label('Stimulus Preview').classes('text-sm font-semibold text-zinc-300 mb-1')
+        # ── Main grid: 2×2 on wide screens, stacks on narrow ──
+        with ui.element('div').classes('w-full').style(
+            'display: grid; gap: 12px; '
+            'grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));'
+        ):
+            # Stimulus Preview
+            with ui.card().classes('flex flex-col'):
+                ui.label('Stimulus Preview').classes('sec-title mb-1')
                 twin_container = twin_preview_canvas()
 
-            # Trajectory
-            with ui.card():
-                ui.label('Trajectory').classes('text-sm font-semibold text-zinc-300 mb-1')
-                with ui.row().classes('gap-3'):
-                    traj_container = trajectory_canvas(state)
-                    traj_container.classes('w-[180px] h-[180px]')
-                    with ui.column().classes('gap-1 justify-center'):
-                        kin_angle = ui.label('θ: —').classes('mono text-xs text-zinc-300')
-                        kin_turn = ui.label('ω: —').classes('mono text-xs text-zinc-300')
-                        kin_disp = ui.label('D: —').classes('mono text-xs text-zinc-300')
+            # Trajectory + Kinematic
+            with ui.card().classes('flex flex-col'):
+                ui.label('Trajectory').classes('sec-title mb-1')
+                traj_container = trajectory_canvas(state)
+                with ui.row().classes('w-full gap-2 justify-center mt-1'):
+                    kin_angle = ui.label('θ: —').classes('mono text-[10px] font-semibold').style('color: var(--accent);')
+                    kin_turn = ui.label('ω: —').classes('mono text-[10px] font-semibold').style('color: var(--ok);')
+                    kin_disp = ui.label('D: —').classes('mono text-[10px] font-semibold').style('color: var(--warn);')
 
-        # Hardware + Calibration
-        with ui.row().classes('w-full gap-3'):
+            # Hardware
             hw = hw_status_panel(state)
-            hw.classes('flex-grow')
+
+            # Calibration
             calib_card = calibration_display(controller)
-            calib_card.classes('flex-grow')
 
-        # Verdict table
-        verd = verdict_table(state)
+        # ── Bottom: Config + Verdicts side by side ──
+        with ui.row().classes('w-full gap-3').style('flex-wrap: wrap; min-width: 0;'):
+            # Config snapshot (responsive grid: 2 cols on mobile, 3-4 on desktop)
+            with ui.card().style('flex: 1 1 400px; min-width: 0;'):
+                ui.label('Configuration').classes('sec-title mb-1')
+                config_grid = ui.element('div').style(
+                    'display: grid; gap: 8px; font-size: 11px; '
+                    'grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));'
+                )
 
-    # ── Per-client UI sync (reads shared state, no queue polling) ──
-    def tick():
-        phase_pill.text = state.phase
-        color_pill(phase_pill, state.ui_color)
-        sess_label.text = f'session {state.session_num}'
-        trial_label.text = f'trial {state.trial_idx} / {state.total_trials}'
-        update_worker_badge(worker_badge, state.worker_status, state.worker_error)
-        status_label.text = state.status_text
+            # Verdict table
+            verd = verdict_table(state)
+            verd.style('flex: 1 1 360px; min-width: 0;')
 
-        km = state.kinematic
-        kin_angle.text = f"θ: {fmt_val(km.get('k_angle'))}"
-        kin_turn.text = f"ω: {fmt_val(km.get('k_turn_speed'))}"
-        kin_disp.text = f"D: {fmt_val(km.get('k_disp'))}"
+    # ── Shared tick loop (same as dashboard, zero duplication) ──
+    tick = create_tick(
+        state, controller, strip,
+        extra_components={
+            'hw': hw, 'verd': verd, 'calib': calib_card,
+            'kin_angle': kin_angle, 'kin_turn': kin_turn, 'kin_disp': kin_disp,
+            'config_grid': config_grid,
+            '_update_config_grid': _update_config_grid,
+        },
+    )
+    tick_timer = ui.timer(0.033, tick)
 
-        verd._verdict_refresh()
-        hw._hw_refresh()
-        calib_card._calib_refresh()
-        _update_config_grid(config_grid, state.config_snapshot)
-
-    ui.timer(0.016, tick)
-
+    # Canvas updates at 20Hz
     async def visual_tick():
-        if hasattr(traj_container, '_traj_update'):
-            await traj_container._traj_update()
-        await update_twin(twin_container, state.ui_twin)
+        try:
+            if hasattr(traj_container, '_traj_update'):
+                await traj_container._traj_update()
+            await update_twin(twin_container, state.ui_twin)
+        except TimeoutError:
+            pass
 
-    ui.timer(0.05, visual_tick)
+    visual_timer = ui.timer(0.05, visual_tick)
+
+    from nicegui import context
+    context.client.on_disconnect(lambda: (tick_timer.cancel(), visual_timer.cancel()))
+
+
+# Keys to hide from monitor (internal / uninteresting)
+_HIDDEN_KEYS = {'_output_dir', 'calib_matrix', 'Sync Topology'}
 
 
 def _update_config_grid(grid, cfg):
     if not cfg:
         return
     grid.clear()
-    display_keys = [
-        'Paradigm Class', 'Experiment Pattern', 'Subject ID',
-        'Session Number', 'Total Sessions', 'ITI Range (sec)', 'ISI Range (sec)',
-    ]
     with grid:
-        for k in display_keys:
-            if k in cfg:
-                with ui.element('div').classes('bg-[#0E0E11] rounded px-2 py-1'):
-                    ui.label(k).classes('text-[10px] text-zinc-500')
-                    ui.label(str(cfg[k])).classes('text-xs text-zinc-200')
+        for k, v in cfg.items():
+            if k in _HIDDEN_KEYS:
+                continue
+            v_str = str(v)
+            if len(v_str) > 80:
+                v_str = v_str[:77] + '…'
+            with ui.element('div').classes('cell rounded px-2 py-1'):
+                ui.label(k).classes('text-[10px]').style('color: var(--text-muted);')
+                ui.label(v_str).classes('text-xs mono').style('color: var(--text);')

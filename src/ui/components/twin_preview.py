@@ -3,22 +3,30 @@ import json
 from pathlib import Path
 from nicegui import ui
 
-JS_FILE = Path(__file__).parent / 'twin_preview.js'
-_JS_INJECTED = False
+_JS_TEXT = (Path(__file__).parent / 'twin_preview.js').read_text(encoding='utf-8')
 
 
 def twin_preview_canvas() -> ui.element:
-    """Create a twin preview canvas element."""
-    global _JS_INJECTED
-    if not _JS_INJECTED:
-        ui.add_body_html(f'<script>{JS_FILE.read_text(encoding="utf-8")}</script>')
-        _JS_INJECTED = True
+    """Create a twin preview canvas element.
 
-    canvas_id = f'twin-{id(object())}'
-    container = ui.element('div').classes('w-full bg-black rounded-lg overflow-hidden min-w-0')
-    container.style('aspect-ratio: 8/3; min-height: 100px;')
+    The canvas uses CSS aspect-ratio:8/3 matching the v1.0.0 virtual
+    coordinate system (400x150).  The JS renderer derives pixel height
+    from clientWidth (sizeCanvas pattern from v1.0.0), so it works
+    correctly regardless of the CSS height.
+    """
+    # Inject JS per-page (not global) — each NiceGUI page context needs its own script
+    ui.add_body_html(f'<script>{_JS_TEXT}</script>')
+
+    container = ui.element('div').classes('w-full').style(
+        'background: #000; border-radius: 6px; overflow: hidden; '
+        'aspect-ratio: 8/3; min-height: 60px;'
+    )
+    canvas_id = f'twin-{id(container)}'
     with container:
-        ui.html(f'<canvas id="{canvas_id}" style="width:100%;height:100%"></canvas>')
+        ui.html(
+            f'<canvas id="{canvas_id}" '
+            f'style="width:100%;aspect-ratio:8/3;display:block;"></canvas>'
+        )
     container._twin_canvas_id = canvas_id
     return container
 

@@ -19,9 +19,9 @@ def config_panel(on_paradigm_change=None) -> tuple:
     form_values: Dict[str, Any] = {}
     param_container = None
 
-    with ui.card().classes('w-full glass-card') as card:
+    with ui.card().classes('w-full') as card:
         # --- Fixed config fields (two-column grid for compactness) ---
-        ui.label('Configuration').classes('text-sm font-bold mb-2').style('color: #F1F5F9;')
+        ui.label('Configuration').classes('sec-title mb-2')
 
         with ui.row().classes('w-full items-center gap-1'):
             subject_input = ui.input('Subject ID', value='').props('dense outlined').classes('flex-grow')
@@ -62,8 +62,8 @@ def config_panel(on_paradigm_change=None) -> tuple:
         debug_switch = ui.switch('Debug Mode', value=False).props('dense')
 
         # --- Dynamic paradigm params ---
-        ui.separator().classes('my-1')
-        ui.label('Paradigm Parameters').classes('text-sm font-semibold mb-1').style('color: #94A3B8;')
+        ui.separator().classes('my-1').style('border-color: var(--border);')
+        ui.label('Paradigm Parameters').classes('sec-title mb-1')
         param_container = ui.column().classes('w-full gap-1')
 
     # Store references
@@ -94,7 +94,7 @@ def config_panel(on_paradigm_change=None) -> tuple:
         lo, hi = meta.get('min'), meta.get('max')
 
         if p_type == 'info':
-            ui.label(label).classes('text-[10px] text-zinc-500 italic')
+            ui.label(label).classes('text-[10px] italic').style('color: var(--text-muted);')
             return None
         if p_type == 'choice':
             return ui.select(
@@ -239,7 +239,7 @@ def config_panel(on_paradigm_change=None) -> tuple:
             'iti_range': iti_input.value,
             'isi_range': isi_input.value,
             'serial_port': serial_input.value,
-            'screen_id': str(int(screen_id.value)) if screen_id.value else '1',
+            'screen_id': str(int(screen_id.value)) if screen_id.value is not None else '1',
             'debug': debug_switch.value,
             'viewing_distance_cm': str(view_dist.value),
             'screen_width_cm': str(screen_w.value),

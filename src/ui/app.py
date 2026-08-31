@@ -43,7 +43,7 @@ def main():
     app.native.window_args.update({
         'frameless': True,
         'easy_drag': False,
-        'background_color': '#0A0A0B',
+        'background_color': '#111110',
     })
     app.native.settings['DRAG_REGION_SELECTOR'] = '.drag-handle'
 
@@ -73,9 +73,9 @@ def main():
             # Remote users get the read-only monitor
             ui.navigate.to('/monitor')
 
-    # Single global timer for telemetry polling (62.5 Hz)
+    # Single global timer for telemetry polling (30 Hz)
     # Must use app.timer (not ui.timer) so it runs globally, not per-client
-    app.on_startup(lambda: app.timer(0.016, _global_poll))
+    app.on_startup(lambda: app.timer(0.033, _global_poll))
 
     print(f'Dashboard token: {DASHBOARD_TOKEN}')
     print(f'Monitor available at: http://<host>:8000/monitor')

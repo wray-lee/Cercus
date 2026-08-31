@@ -4,20 +4,29 @@ from pathlib import Path
 from nicegui import ui
 
 _JS_TEXT = (Path(__file__).parent / 'trajectory.js').read_text(encoding='utf-8')
-_JS_INJECTED = set()  # track per-client injection
 
 
 def trajectory_canvas(state) -> ui.element:
-    """Create a trajectory canvas element bound to AppState."""
-    container = ui.element('div').classes('bg-black rounded-lg overflow-hidden min-w-0')
-    container.style('aspect-ratio: 1; min-height: 80px;')
+    """Create a trajectory canvas element bound to AppState.
+
+    The canvas uses CSS aspect-ratio:1 matching the v1.0.0 virtual
+    coordinate system (150x150).  The JS renderer derives pixel height
+    from clientWidth (sizeCanvas pattern from v1.0.0), so it works
+    correctly regardless of the CSS height.
+    """
+    container = ui.element('div').classes('w-full overflow-hidden').style(
+        'background: #000; border-radius: 6px; aspect-ratio: 1; min-height: 80px;'
+    )
     canvas_id = f'traj-{id(container)}'
 
-    # Inject JS once per page render (inside page function, not global scope)
+    # Inject JS once per page render
     ui.add_body_html(f'<script>{_JS_TEXT}</script>')
 
     with container:
-        ui.html(f'<canvas id="{canvas_id}" style="width:100%;height:100%"></canvas>')
+        ui.html(
+            f'<canvas id="{canvas_id}" '
+            f'style="width:100%;aspect-ratio:1;display:block;"></canvas>'
+        )
 
     async def update():
         bbox = state.trail_bbox

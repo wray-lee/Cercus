@@ -8,7 +8,7 @@ from src.ui.components.trajectory import trajectory_canvas
 from src.ui.components.twin_preview import twin_preview_canvas, update_twin
 from src.ui.components.verdict_table import verdict_table
 from src.ui.components.hw_status import hw_status_panel
-from src.ui.components.common import fmt_val, color_pill, update_worker_badge
+from src.ui.components.status_strip import build_status_strip, create_tick
 
 
 def build_dashboard(state, controller):
@@ -22,109 +22,102 @@ def build_dashboard(state, controller):
 
         # ── Main body: two columns ──
         with ui.row().classes('w-full flex-grow gap-0').style('min-height: 0; overflow: hidden;'):
-            # ── Left column: config + controls (fixed 360px, scrollable) ──
-            with ui.column().classes('w-[360px] min-w-[360px] h-full overflow-y-auto p-3 gap-2 border-r border-[#262629]').style('flex-shrink: 0;'):
+
+            # ── Left column: config + controls ──
+            with ui.column().classes(
+                'h-full overflow-y-auto p-3 gap-2'
+            ).style(
+                'width: 340px; min-width: 260px; flex-shrink: 1; '
+                'border-right: 1px solid var(--border);'
+            ):
                 cfg_card, get_form_values = config_panel()
 
-                ui.separator()
+                ui.separator().classes('my-1').style('border-color: var(--border);')
                 with ui.row().classes('w-full gap-2'):
-                    start_btn = ui.button('START', on_click=lambda: _start(controller, get_form_values, state, start_btn, stop_btn))
-                    start_btn.classes('flex-grow bg-green-700 text-white font-bold').props('dense')
-                    stop_btn = ui.button('STOP', on_click=lambda: _stop(controller, stop_btn))
-                    stop_btn.classes('flex-grow bg-red-900 text-white font-bold').props('dense')
+                    start_btn = ui.button(
+                        'START',
+                        on_click=lambda: _start(controller, get_form_values, state, start_btn, stop_btn, _btn_state),
+                    ).classes('flex-grow font-bold').style(
+                        'background: var(--ok); color: var(--bg);'
+                    ).props('dense unelevated')
+                    stop_btn = ui.button(
+                        'STOP',
+                        on_click=lambda: _stop(controller, state, stop_btn),
+                    ).classes('flex-grow font-bold').style(
+                        'background: var(--err); color: var(--text);'
+                    ).props('dense unelevated')
                     stop_btn.disable()
 
             # ── Right column: live status + compact visualizations ──
-            with ui.column().classes('h-full overflow-y-auto p-3 gap-2').style('flex: 1 1 0%; min-width: 0;'):
-                # Status bar
-                with ui.row().classes('w-full items-center gap-2 mb-1'):
-                    # Status dot + phase
-                    with ui.row().classes('items-center gap-1'):
-                        phase_dot = ui.html('<span class="status-dot" style="background: #71717A;"></span>')
-                        phase_pill = ui.label('IDLE').classes('mono text-xs font-bold text-zinc-300')
-                    sess_label = ui.label('session —').classes('mono text-[10px] text-zinc-400')
-                    trial_label = ui.label('trial — / —').classes('mono text-[10px] text-zinc-400')
-                    worker_badge = ui.label('IDLE').classes('mono text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-zinc-700 text-zinc-400')
-                    status_label = ui.label('Ready').classes('text-[10px] text-zinc-400 ml-auto')
+            with ui.column().classes('h-full overflow-y-auto p-3 gap-2').style(
+                'flex: 1 1 0%; min-width: 0;'
+            ):
+                # ── Status strip ──
+                strip = build_status_strip(show_subject=True)
 
-                # Stimulus + Trajectory side by side
-                with ui.row().classes('w-full gap-2').style('min-width: 0;'):
-                    # Twin preview
-                    with ui.card().classes('min-w-0').style('flex: 1 1 0%;'):
-                        ui.label('Stimulus').classes('text-xs font-semibold text-zinc-300 mb-1')
+                # ── Stimulus + Trajectory side by side ──
+                with ui.row().classes('w-full gap-2 items-stretch').style('min-width: 0;'):
+                    with ui.card().classes('min-w-0 flex flex-col').style('flex: 2 1 0%;'):
+                        with ui.row().classes('items-center gap-1.5 mb-1'):
+                            ui.icon('monitor').classes('text-[14px]').style('color: var(--text-muted);')
+                            ui.label('Stimulus').classes('sec-title')
                         twin_container = twin_preview_canvas()
 
-                    # Trajectory + kinematic
-                    with ui.card().classes('min-w-0').style('flex: 0 0 auto; width: 260px;'):
-                        ui.label('Trajectory').classes('text-xs font-semibold text-zinc-300 mb-1')
-                        with ui.row().classes('w-full gap-2'):
-                            traj_container = trajectory_canvas(state)
-                            traj_container.style('width: 140px; height: 140px; flex-shrink: 0;')
-                            with ui.column().classes('gap-0.5 justify-center'):
-                                kin_angle = ui.label('θ: —').classes('mono text-[10px] text-zinc-300')
-                                kin_turn = ui.label('ω: —').classes('mono text-[10px] text-zinc-300')
-                                kin_disp = ui.label('D: —').classes('mono text-[10px] text-zinc-300')
+                    with ui.card().classes('min-w-0 flex flex-col').style(
+                        'flex: 1 1 0%; min-width: 200px;'
+                    ):
+                        with ui.row().classes('items-center gap-1.5 mb-1'):
+                            ui.icon('route').classes('text-[14px]').style('color: var(--text-muted);')
+                            ui.label('Trajectory').classes('sec-title')
+                        traj_container = trajectory_canvas(state)
+                        with ui.row().classes('w-full gap-2 justify-center mt-1'):
+                            kin_angle = ui.label('θ: —').classes(
+                                'mono text-[10px] font-semibold'
+                            ).style('color: var(--accent);')
+                            kin_turn = ui.label('ω: —').classes(
+                                'mono text-[10px] font-semibold'
+                            ).style('color: var(--ok);')
+                            kin_disp = ui.label('D: —').classes(
+                                'mono text-[10px] font-semibold'
+                            ).style('color: var(--warn);')
 
-                # Hardware + Verdicts + Calibration
+                # ── Hardware + Verdicts + Calibration ──
                 with ui.row().classes('w-full gap-2').style('flex-wrap: wrap; min-width: 0;'):
                     hw = hw_status_panel(state)
-                    hw.style('flex: 1 1 240px; min-width: 0;')
+                    hw.style('flex: 1 1 200px; min-width: 0;')
                     verd = verdict_table(state)
-                    verd.style('flex: 1 1 240px; min-width: 0;')
+                    verd.style('flex: 1 1 200px; min-width: 0;')
                     calib = calibration_panel(controller)
-                    calib.style('flex: 1 1 240px; min-width: 0;')
+                    calib.style('flex: 1 1 200px; min-width: 0;')
 
-    # ── Per-client UI sync (reads shared state, no queue polling) ──
-    def tick():
-        # Re-enable start button when worker dies
-        if state.worker_died and not controller.worker_alive:
+    # ── Dynamic favicon ──
+    _setup_favicon()
+
+    # ── Re-enable start on worker death (dashboard-only) ──
+    _btn_state = {'started': False}
+
+    def _check_worker_death():
+        # Use controller.worker_alive directly — state.worker_died is transient (16ms)
+        if _btn_state['started'] and not controller.worker_alive:
+            _btn_state['started'] = False
             start_btn.enable()
             stop_btn.disable()
 
-        phase_pill.text = state.phase
+    # ── Shared tick loop ──
+    tick = create_tick(
+        state, controller, strip,
+        extra_components={
+            'hw': hw, 'verd': verd, 'calib': calib,
+            'kin_angle': kin_angle, 'kin_turn': kin_turn, 'kin_disp': kin_disp,
+        },
+        favicon_fn=_update_favicon,
+    )
 
-        # Update status dot color based on phase — support both named and hex
-        dot_colors = {
-            'cyan': '#3B82F6', 'lime': '#84CC16', 'green': '#10B981',
-            'orange': '#F59E0B', 'red': '#EF4444', 'gray': '#64748B',
-            'white': '#F1F5F9', 'yellow': '#EAB308',
-        }
-        raw_color = state.ui_color or 'gray'
-        if raw_color.startswith('#'):
-            dot_color = raw_color  # hex passthrough (e.g. #4488ff)
-        else:
-            dot_color = dot_colors.get(raw_color, '#64748B')
-        phase_dot.content = f'<span class="status-dot" style="background: {dot_color};"></span>'
+    def dashboard_tick():
+        _check_worker_death()
+        tick()
 
-        sess_label.text = f'session {state.session_num}'
-        trial_label.text = f'trial {state.trial_idx} / {state.total_trials}'
-        update_worker_badge(worker_badge, state.worker_status, state.worker_error)
-
-        # Status text with terminal event details
-        if state.worker_died:
-            terminal_status = controller.terminal_status or ''
-            terminal_error = controller.terminal_error or ''
-            if terminal_status == 'worker_done':
-                status_label.text = 'Experiment completed'
-            elif terminal_status == 'worker_abort':
-                status_label.text = 'Experiment aborted'
-            elif terminal_status == 'worker_error':
-                status_label.text = f'Error: {terminal_error}' if terminal_error else 'Worker error'
-            else:
-                status_label.text = 'Worker disconnected'
-        else:
-            status_label.text = state.status_text
-
-        km = state.kinematic
-        kin_angle.text = f"θ: {fmt_val(km.get('k_angle'))}"
-        kin_turn.text = f"ω: {fmt_val(km.get('k_turn_speed'))}"
-        kin_disp.text = f"D: {fmt_val(km.get('k_disp'))}"
-
-        verd._verdict_refresh()
-        hw._hw_refresh()
-        calib._calib_refresh()
-
-    ui.timer(0.016, tick)
+    tick_timer = ui.timer(0.033, dashboard_tick)
 
     # Trajectory + twin update at lower rate (50ms ≈ 20Hz)
     async def visual_tick():
@@ -133,16 +126,41 @@ def build_dashboard(state, controller):
                 await traj_container._traj_update()
             await update_twin(twin_container, state.ui_twin)
         except TimeoutError:
-            pass  # Page disconnected, ignore
+            pass
 
     visual_timer = ui.timer(0.05, visual_tick)
 
-    # Cancel timers on disconnect to prevent errors on window close
     from nicegui import context
-    context.client.on_disconnect(lambda: visual_timer.cancel())
+    context.client.on_disconnect(lambda: (tick_timer.cancel(), visual_timer.cancel()))
 
 
-def _start(controller, get_form_values, state, start_btn, stop_btn):
+# ── Favicon helpers ──
+def _setup_favicon():
+    ui.add_head_html('''
+    <script>
+    window._cercusFavicon = function(running) {
+        const c = document.createElement('canvas'); c.width=32; c.height=32;
+        const x = c.getContext('2d');
+        x.clearRect(0,0,32,32);
+        x.fillStyle = running ? '#C75449' : '#6EDBA1';
+        x.beginPath(); x.arc(16,16,13,0,Math.PI*2); x.fill();
+        if (!running) { x.fillStyle='#111110'; x.beginPath(); x.arc(16,16,5,0,Math.PI*2); x.fill(); }
+        let link = document.querySelector('link[rel*="icon"]');
+        if (!link) { link = document.createElement('link'); link.rel='icon'; document.head.appendChild(link); }
+        link.href = c.toDataURL();
+    };
+    </script>
+    ''')
+
+
+def _update_favicon(is_running):
+    try:
+        ui.run_javascript(f'window._cercusFavicon && window._cercusFavicon({"true" if is_running else "false"})')
+    except Exception:
+        pass
+
+
+def _start(controller, get_form_values, state, start_btn, stop_btn, btn_state):
     from src.ui.controller import ExperimentController
     import logging
     log = logging.getLogger(__name__)
@@ -153,7 +171,7 @@ def _start(controller, get_form_values, state, start_btn, stop_btn):
     state.reset()
     state.status_text = 'Running...'
     state.worker_status = 'running'
-    state.config_snapshot = config  # populate for /monitor display
+    state.config_snapshot = config
     try:
         controller.start_experiment(config)
     except Exception as exc:
@@ -164,10 +182,40 @@ def _start(controller, get_form_values, state, start_btn, stop_btn):
         start_btn.enable()
         stop_btn.disable()
         return
+    btn_state['started'] = True
     start_btn.disable()
     stop_btn.enable()
+    _yield_focus_to_psychopy()
 
 
-def _stop(controller, stop_btn):
+def _stop(controller, state, stop_btn):
     controller.stop_experiment()
+    state.set_aborting()
     stop_btn.disable()
+    # Do NOT enable start_btn here — _check_worker_death() does it
+    # once the worker process has actually terminated.
+
+
+def _yield_focus_to_psychopy():
+    """Yield foreground focus to PsychoPy without hiding the dashboard."""
+    import sys
+    if sys.platform != 'win32':
+        return
+    import threading, time
+
+    def _do():
+        time.sleep(1.5)
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            hwnd = user32.FindWindowW(None, 'Cercus')
+            if not hwnd:
+                hwnd = user32.GetForegroundWindow()
+            if hwnd:
+                user32.ShowWindow(hwnd, 6)   # SW_MINIMIZE
+                time.sleep(0.8)
+                user32.ShowWindow(hwnd, 4)   # SW_SHOWNOACTIVATE
+        except Exception:
+            pass
+
+    threading.Thread(target=_do, daemon=True).start()

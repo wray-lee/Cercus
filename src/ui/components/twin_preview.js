@@ -1,5 +1,6 @@
 // Twin preview canvas renderer for NiceGUI.
 // Called via window.cercusTwin(data) from Python.
+// Ported from v1.0.0 index.html — uses sizeCanvas pattern.
 
 (function(){
   function tkColor(c) {
@@ -27,16 +28,22 @@
     }
   }
 
+  // v1.0.0 sizeCanvas: compute pixel buffer from cssW + model aspect ratio.
+  // Does NOT trust clientHeight — derives it from clientWidth.
+  function sizeCanvas(cv, wModel, hModel) {
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = cv.clientWidth || wModel;
+    const cssH = Math.max(1, cssW * hModel / wModel);
+    const pw = Math.round(cssW * dpr), ph = Math.round(cssH * dpr);
+    if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
+    return { dpr, sx: cssW / wModel, sy: cssH / hModel };
+  }
+
   window.cercusTwin = function(data) {
     const cv = document.getElementById(data.canvasId);
     if (!cv) return;
     const ctx = cv.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
-    const cssW = cv.clientWidth || 400;
-    const cssH = cv.clientHeight || 150;
-    const pw = Math.round(cssW * dpr), ph = Math.round(cssH * dpr);
-    if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
-    const sx = cssW / 400, sy = cssH / 150;
+    const { dpr, sx, sy } = sizeCanvas(cv, 400, 150);
     ctx.setTransform(dpr * sx, 0, 0, dpr * sy, 0, 0);
     ctx.clearRect(0, 0, 400, 150);
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 400, 150);

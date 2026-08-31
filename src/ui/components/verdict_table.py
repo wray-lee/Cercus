@@ -1,11 +1,11 @@
 """Verdict table + summary — NiceGUI component."""
 from nicegui import ui
 
-
-COLOR_MAP = {
-    'escape': 'text-red-400',
-    'startle': 'text-amber-400',
-    'no_response': 'text-zinc-500',
+# v1.0.0 response color mapping
+_RESPONSE_COLORS = {
+    'escape': '#F87171',      # red
+    'startle': '#FB923C',     # orange
+    'no_response': '#71717A', # gray
 }
 
 
@@ -13,8 +13,9 @@ def verdict_table(state) -> ui.element:
     """Create verdict table card bound to AppState."""
     with ui.card().classes('w-full') as card:
         with ui.row().classes('items-center gap-2 mb-1'):
-            ui.label('Verdicts').classes('text-xs font-semibold text-zinc-300')
-            summary_label = ui.label('').classes('text-[10px] text-zinc-500 mono')
+            ui.icon('checklist').classes('text-[14px]').style('color: var(--text-muted);')
+            ui.label('Verdicts').classes('sec-title')
+            summary_label = ui.label('').classes('text-[10px] mono').style('color: var(--text-muted);')
 
         columns = [
             {'name': 'trial', 'label': '#', 'field': 'trial', 'align': 'center', 'style': 'width: 30px; font-size: 10px'},
@@ -24,7 +25,17 @@ def verdict_table(state) -> ui.element:
             {'name': 'angle', 'label': 'Angle', 'field': 'angle', 'align': 'right', 'style': 'font-size: 10px'},
         ]
         table = ui.table(columns=columns, rows=[], row_key='trial').props('dense flat').classes('w-full text-[10px]')
-        table.style('max-height: 140px; overflow-y: auto')
+        table.style('max-height: 140px; overflow-y: auto;')
+
+        # Color-coded response chips (v1.0.0 style)
+        table.add_slot('body-cell-response', r'''
+            <q-td :props="props">
+                <q-badge
+                    :style="'background: ' + ({'escape':'#F87171','startle':'#FB923C','no_response':'#71717A'}[props.value] || '#71717A') + '; color: #111110; font-size: 9px; font-weight: 700;'"
+                    :label="props.value"
+                />
+            </q-td>
+        ''')
 
     def refresh():
         rows = []
@@ -33,8 +44,8 @@ def verdict_table(state) -> ui.element:
                 'trial': v.get('trial_idx', '—'),
                 'side': v.get('side', '—'),
                 'response': v.get('response', '—'),
-                'disp': round(v.get('cum_disp', 0), 2),
-                'angle': round(v.get('cum_dz', 0), 2),
+                'disp': round(float(v.get('cum_disp') or 0), 2),
+                'angle': round(float(v.get('cum_dz') or 0), 2),
             })
         table.rows = rows
         table.update()

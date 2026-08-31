@@ -4,44 +4,44 @@ from nicegui import ui, app
 
 def titlebar():
     """Build draggable titlebar with window controls."""
-    with ui.row().classes('w-full h-9 items-center px-4 gap-2 drag-handle').style(
-        'background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%); '
-        'border-bottom: 1px solid rgba(59, 130, 246, 0.3); '
-        'flex-shrink: 0; '
-        'box-shadow: 0 2px 8px rgba(0,0,0,0.5);'
+    with ui.row().classes('w-full items-center px-4 gap-2 drag-handle').style(
+        'height: 28px; '
+        'background: var(--surface); '
+        'border-bottom: 1px solid var(--border); '
+        'flex-shrink: 0;'
     ):
-        ui.label('Cercus').classes('text-sm font-bold').style('color: #60A5FA;')
-        ui.label('·').classes('text-zinc-600')
-        ui.label('Experiment Dashboard').classes('text-xs').style('color: #94A3B8;')
+        ui.label('Cercus').classes('text-[13px] font-bold').style('color: var(--accent);')
+        ui.label('·').style('color: var(--border);')
+        ui.label('Experiment Dashboard').classes('text-[11px]').style('color: var(--text-muted);')
 
         ui.element('div').classes('flex-grow')  # spacer
 
-        # Window controls with hover effects
-        with ui.row().classes('gap-1 items-center'):
-            ui.button(icon='remove', on_click=_minimize).props('flat dense round size=sm').classes(
-                'text-zinc-400 hover:bg-blue-900 transition-colors'
-            ).style('width: 28px; height: 28px;')
-            ui.button(icon='crop_square', on_click=_maximize).props('flat dense round size=sm').classes(
-                'text-zinc-400 hover:bg-blue-900 transition-colors'
-            ).style('width: 28px; height: 28px;')
-            ui.button(icon='close', on_click=_close).props('flat dense round size=sm').classes(
-                'text-zinc-400 hover:bg-red-900 transition-colors'
-            ).style('width: 28px; height: 28px;')
+        with ui.row().classes('gap-0.5 items-center'):
+            _ctrl_btn('remove', _minimize)
+            _ctrl_btn('crop_square', _maximize)
+            _ctrl_btn('close', _close, hover_bg='rgba(199, 84, 73, 0.25)')
+
+
+def _ctrl_btn(icon, handler, hover_bg='rgba(255,255,255,0.06)'):
+    """Window control button — minimal, 24×24."""
+    btn = ui.button(icon=icon, on_click=handler).props('flat dense round size=xs')
+    btn.style(
+        f'width: 24px; height: 24px; color: var(--text-muted); '
+        f'--q-btn-hover-bg: {hover_bg};'
+    )
+    return btn
 
 
 def _minimize():
-    """Minimize window."""
     if app.native.main_window:
         app.native.main_window.minimize()
 
 
 def _maximize():
-    """Toggle maximize window."""
     if app.native.main_window:
         app.native.main_window.toggle_fullscreen()
 
 
 def _close():
-    """Close window."""
     if app.native.main_window:
         app.native.main_window.destroy()

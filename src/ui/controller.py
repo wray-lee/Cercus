@@ -313,9 +313,10 @@ class ExperimentController:
         """Send POISON_PILL to the stimulus worker."""
         if self.cmd_queue:
             try:
-                self.cmd_queue.put_nowait({"action": "POISON_PILL"})
-            except queue.Full:
-                pass
+                self.cmd_queue.put(({"action": "POISON_PILL"}), timeout=1.0)
+            except (queue.Full, OSError):
+                # Queue full or broken — force-kill as fallback
+                self._kill_worker(self.worker_process)
 
     def cleanup_worker(self):
         """Clean up after worker dies. Call when poll_telemetry reports worker_died."""

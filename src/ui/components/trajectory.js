@@ -1,8 +1,20 @@
 // Trajectory canvas renderer for NiceGUI Vue component.
 // Called via window.cercusTraj(data) from Python.
+// Ported from v1.0.0 index.html — uses sizeCanvas pattern.
 
 (function(){
-  let lastSig = '';
+  const lastSigs = {};
+
+  // v1.0.0 sizeCanvas: compute pixel buffer from cssW + model aspect ratio.
+  // Does NOT trust clientHeight — derives it from clientWidth.
+  function sizeCanvas(cv, wModel, hModel) {
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = cv.clientWidth || wModel;
+    const cssH = Math.max(1, cssW * hModel / wModel);
+    const pw = Math.round(cssW * dpr), ph = Math.round(cssH * dpr);
+    if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
+    return { dpr, sx: cssW / wModel, sy: cssH / hModel };
+  }
 
   window.cercusTraj = function(data) {
     const cv = document.getElementById(data.canvasId);
@@ -12,19 +24,16 @@
     const first = pts.length ? pts[0] : [0,0];
     const last = pts.length ? pts[pts.length-1] : [0,0];
     const sig = pts.length + '|' + first[0] + '|' + first[1] + '|' + last[0] + '|' + last[1] + '|' + angle;
-    if (sig === lastSig) return;
-    lastSig = sig;
+    if (sig === lastSigs[data.canvasId]) return;
+    lastSigs[data.canvasId] = sig;
 
     const ctx = cv.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
-    const cssW = cv.clientWidth || 150;
-    const cssH = cv.clientHeight || 150;
-    const pw = Math.round(cssW * dpr), ph = Math.round(cssH * dpr);
-    if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
-    const sx = cssW / 150, sy = cssH / 150;
+    const { dpr, sx, sy } = sizeCanvas(cv, 150, 150);
     ctx.setTransform(dpr * sx, 0, 0, dpr * sy, 0, 0);
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, 150, 150);
+
+    const W = 150, H = 150;
 
     let dec = pts;
     if (pts.length > 200) {
@@ -32,12 +41,18 @@
       dec = pts.filter((_, i) => i % step === 0);
       if (dec[dec.length - 1] !== pts[pts.length - 1]) dec.push(pts[pts.length - 1]);
     }
-    if (dec.length < 2) return;
+    if (dec.length < 2) {
+      // Draw arrow at center even with no trail
+      if (angle !== 0 || pts.length > 0) {
+        _drawArrow(ctx, W/2, H/2, angle);
+      }
+      return;
+    }
 
     const minx = data.min_x, maxx = data.max_x, miny = data.min_y, maxy = data.max_y;
     if (!Number.isFinite(minx) || !Number.isFinite(maxx) || !Number.isFinite(miny) || !Number.isFinite(maxy)) return;
 
-    const PAD = 10, W = 150, H = 150;
+    const PAD = 10;
     const mx = Math.max((maxx - minx) * 0.1, 0.5), my = Math.max((maxy - miny) * 0.1, 0.5);
     const x0 = minx - mx, x1 = maxx + mx, y0 = miny - my, y1 = maxy + my;
     const rx = Math.max(x1 - x0, 10), ry = Math.max(y1 - y0, 10);
@@ -55,6 +70,10 @@
     const lastPt = pts[pts.length - 1];
     const lx = cxC + (lastPt[0] - cx) * scale;
     const ly = cyC - (lastPt[1] - cy) * scale;
+    _drawArrow(ctx, lx, ly, angle);
+  };
+
+  function _drawArrow(ctx, lx, ly, angle) {
     const rad = (angle || 0) * Math.PI / 180;
     const dx = -Math.sin(rad), dy = Math.cos(rad);
     const rx2 = Math.cos(rad), ry2 = Math.sin(rad);
@@ -68,5 +87,5 @@
     ctx.beginPath(); ctx.moveTo(tip[0], tip[1]); ctx.lineTo(br[0], br[1]);
     ctx.lineTo(notch[0], notch[1]); ctx.lineTo(bl[0], bl[1]); ctx.closePath();
     ctx.fill(); ctx.stroke();
-  };
+  }
 })();

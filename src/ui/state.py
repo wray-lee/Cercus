@@ -29,6 +29,7 @@ class AppState:
         self.worker_status: str = "idle"
         self.worker_error: str = ""
         self.worker_died: bool = False
+        self._aborting: bool = False
 
         # Trajectory
         self.trail_points: List[Tuple[float, float]] = []
@@ -63,14 +64,29 @@ class AppState:
         return (self._trail_min_x, self._trail_max_x,
                 self._trail_min_y, self._trail_max_y)
 
+    @property
+    def is_aborting(self) -> bool:
+        """True between STOP being pressed and the worker actually dying."""
+        return self._aborting
+
     # ------------------------------------------------------------------
     # Event application
     # ------------------------------------------------------------------
 
+    def set_aborting(self):
+        """Mark the experiment as aborting — suppresses telemetry overwrites."""
+        self._aborting = True
+        self.phase = 'ABORTING'
+        self.ui_color = 'orange'
+        self.status_text = 'Stopping experiment...'
+        self.worker_status = 'worker_abort'
+
     def apply(self, poll_result: dict):
         """Apply a poll_telemetry result dict to update state."""
         tel = poll_result.get("telemetry")
-        if tel:
+        # Suppress telemetry overwrites while aborting — the worker may
+        # still be sending frames until it processes the POISON_PILL.
+        if tel and not self._aborting:
             self._apply_telemetry(tel)
 
         for vd in poll_result.get("verdicts", []):
@@ -83,6 +99,8 @@ class AppState:
             self.worker_error = terminal.get("error", "")
 
         self.worker_died = poll_result.get("worker_died", False)
+        if self.worker_died:
+            self._aborting = False  # terminal — clear abort suppression
 
     def _apply_telemetry(self, data: dict):
         self.phase = str(data.get("phase", "—"))
@@ -107,6 +125,7 @@ class AppState:
 
     def _update_trajectory(self, raw_phase: str, ui_metrics: dict):
         # Phase-change reset
+        raw_phase = str(raw_phase or '')
         base_phase = raw_phase
         if raw_phase.startswith("ITI"):
             base_phase = "ITI"
