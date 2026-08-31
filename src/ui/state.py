@@ -110,7 +110,7 @@ class AppState:
         self.total_trials = data.get("total_trials", "—")
         self.ui_twin = data.get("ui_twin")
 
-        ui_metrics = data.get("ui_metrics", {})
+        ui_metrics = data.get("ui_metrics") or {}
         self.hardware_metrics = ui_metrics
 
         # Session change clears verdicts

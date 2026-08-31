@@ -40,12 +40,20 @@ def verdict_table(state) -> ui.element:
     def refresh():
         rows = []
         for v in state.verdict_history:
+            try:
+                disp = round(float(v.get('cum_disp') or 0), 2)
+            except (ValueError, TypeError):
+                disp = 0.0
+            try:
+                angle = round(float(v.get('cum_dz') or 0), 2)
+            except (ValueError, TypeError):
+                angle = 0.0
             rows.append({
                 'trial': v.get('trial_idx', '—'),
                 'side': v.get('side', '—'),
                 'response': v.get('response', '—'),
-                'disp': round(float(v.get('cum_disp') or 0), 2),
-                'angle': round(float(v.get('cum_dz') or 0), 2),
+                'disp': disp,
+                'angle': angle,
             })
         table.rows = rows
         table.update()

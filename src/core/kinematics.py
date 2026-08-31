@@ -250,13 +250,25 @@ class KinematicEngine:
             if abs(self._cum_dz) >= threshold_angle:
                 return True
 
-        # sustained-speed trigger
-        if threshold_speed >= 0.0 and speed_duration_ms > 0.0:
+        # sustained-speed trigger (or instantaneous when speed_duration_ms == 0)
+        if threshold_speed >= 0.0:
             self._speed_threshold_active = threshold_speed
-            if self._speed_above_since >= 0.0 and self._last_t >= 0.0:
-                elapsed_ms = (self._last_t - self._speed_above_since) * 1000.0
-                if elapsed_ms >= speed_duration_ms:
-                    return True
+            if speed_duration_ms > 0.0:
+                # Duration-gated: speed must stay above threshold for N ms
+                if self._speed_above_since >= 0.0 and self._last_t >= 0.0:
+                    elapsed_ms = (self._last_t - self._speed_above_since) * 1000.0
+                    if elapsed_ms >= speed_duration_ms:
+                        return True
+            else:
+                # Instantaneous speed check (speed_duration_ms == 0)
+                if threshold_speed == 0.0:
+                    # Stationary trigger: speed must be below quiet threshold
+                    if self._move_speed <= 15.0:
+                        return True
+                else:
+                    # Motion trigger: current speed meets threshold
+                    if self._move_speed >= threshold_speed:
+                        return True
         else:
             self._speed_threshold_active = -1.0
 

@@ -26,9 +26,10 @@ def _make_trial_bar(current, total):
     if total <= 0:
         return ''
     n = min(total, 80)
+    scaled = int(current * n / total) if total > 0 else 0
     segs = []
     for i in range(n):
-        color = 'var(--accent)' if i < current else 'var(--border)'
+        color = 'var(--accent)' if i < scaled else 'var(--border)'
         segs.append(
             f'<span style="flex:1;height:4px;border-radius:1px;background:{color};"></span>'
         )

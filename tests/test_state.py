@@ -111,3 +111,11 @@ def test_reset_clears_all():
     assert len(s.trail_points) == 0
     assert len(s.verdict_history) == 0
     assert s.worker_status == "idle"
+
+
+def test_apply_telemetry_handles_none_ui_metrics():
+    s = AppState()
+    s.apply({"telemetry": {"action": "telemetry", "phase": "ITI", "ui_metrics": None},
+             "verdicts": [], "terminal": None, "worker_died": False})
+    assert s.hardware_metrics == {}
+    assert s.trail_angle == 0.0

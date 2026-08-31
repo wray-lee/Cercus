@@ -31,6 +31,14 @@ class KinematicsParser:
         # 防抖阈值
         # self._jitter_thresh: float = 1.5
         self._jitter_thresh: float = 0.0
+        # Pre-computed index map for zero-allocation calibration
+        self._idx_map: dict[str, int] = {}
+        for idx, (_, _, key) in enumerate(self._field_defs):
+            if key in ("dx", "dy", "dz"):
+                self._idx_map[key] = idx
+        self._has_spatial = all(k in self._idx_map for k in ("dx", "dy", "dz"))
+        # Reusable output buffer (avoids list() allocation per frame)
+        self._out_buf: list = [d for _, d, _ in self._field_defs]
 
     def get_headers(self) -> list:
         return ["sys_time"] + [h for _, _, h in self._field_defs] + ["global_trial_id"]
@@ -56,13 +64,12 @@ class KinematicsParser:
         return out
 
     def _apply_calibration(self, fields: list) -> list:
-        out = list(fields)
-        # Locate dx, dy, dz indices in the field definitions
-        idx_map: dict[str, int] = {}
-        for idx, (_, _, key) in enumerate(self._field_defs):
-            if key in ("dx", "dy", "dz"):
-                idx_map[key] = idx
-        if all(k in idx_map for k in ("dx", "dy", "dz")):
+        # Reuse pre-allocated output buffer instead of list(fields)
+        out = self._out_buf
+        for i in range(len(fields)):
+            out[i] = fields[i]
+        idx_map = self._idx_map
+        if self._has_spatial:
             raw_dx = float(out[idx_map["dx"]])
             raw_dy = float(out[idx_map["dy"]])
             raw_dz = float(out[idx_map["dz"]])
@@ -151,6 +158,7 @@ class SerialDaemon:
         self._running = False
         self._clock_offset: float = 0.0
         self._rx_buf: str = ""
+        self._flush_event = threading.Event()
 
     def start(self, time_func: Callable[[], float]):
         if time_func is None:
@@ -190,6 +198,10 @@ class SerialDaemon:
         error_count = 0
         rx_buf = self._rx_buf
         while self._running:
+            # Check flush signal from another thread
+            if self._flush_event.is_set():
+                rx_buf = ""
+                self._flush_event.clear()
             try:
                 if not self._serial or not getattr(self._serial, "is_open", False):
                     break
@@ -262,6 +274,8 @@ class SerialDaemon:
 
     def flush_input(self):
         """Discard all buffered serial data and pending queue items."""
+        # Signal reader thread to clear its local rx_buf
+        self._flush_event.set()
         if self._serial and getattr(self._serial, "is_open", False):
             self._serial.reset_input_buffer()
         while not self.data_queue.empty():

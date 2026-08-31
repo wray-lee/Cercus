@@ -16,7 +16,14 @@ from src.models.paradigm import PARADIGM_REGISTRY
 log = logging.getLogger(__name__)
 
 
-def _safe_int(val: str, default: int) -> int:
+def _safe_int(val, default: int) -> int:
+    if isinstance(val, bool):
+        return default
+    if isinstance(val, (int, float)):
+        try:
+            return int(val)
+        except (ValueError, OverflowError):
+            return default
     try:
         v = val.strip()
         return int(v) if v.lstrip('-').isdigit() else default
@@ -209,10 +216,10 @@ class ExperimentController:
                 except (OSError, ValueError):
                     pass
                 self._drain_queue_async(q)
-                try:
-                    q.close()
-                except (OSError, ValueError):
-                    pass
+                # Do NOT call q.close() here — the drain thread needs the
+                # queue open to consume remaining items.  The queue will be
+                # garbage-collected once the drain thread exits and this
+                # reference is cleared.
                 setattr(self, q_name, None)
 
     def _kill_worker(self, proc: Optional[mp.Process], timeout: float = 4.0):

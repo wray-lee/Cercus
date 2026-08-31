@@ -134,32 +134,35 @@ class GenericWorker:
     def _drain_hardware(self, logger, hw_daemon) -> dict:
         items = hw_daemon.drain_queue()
         if items:
-            if logger and logger.is_open():
-                kin_rows = [
-                    p
-                    for sys_t, raw in items
-                    if (p := self.parser.parse(sys_t, raw, logger.global_trial_id))
-                ]
-                if kin_rows:
-                    logger.log_kinematics_batch(kin_rows)
-
+            # Parse each item ONCE — reuse the parsed result for both logging
+            # and kinematic update.  parse() calls _apply_calibration() which
+            # mutates the spatial hysteresis accumulator; calling it again via
+            # get_telemetry() would double-count every sample.
+            field_keys = [h for _, _, h in self.parser._field_defs]
+            kin_rows = []
             for sys_t, raw in items:
-                tel = self.parser.get_telemetry(raw)
-                if tel is None:
+                row = self.parser.parse(sys_t, raw,
+                                       logger.global_trial_id if (logger and logger.is_open()) else 0)
+                if row is None:
                     continue
-                # ard_time is in milliseconds from Arduino; convert to seconds
-                _ard = tel.get("ard_time")
+                if logger and logger.is_open():
+                    kin_rows.append(row)
+                # row layout: [sys_time_str, field0, field1, ..., g_id]
+                # Extract calibrated fields (skip sys_time at [0] and g_id at [-1])
+                cal_fields = row[1:-1]
+                tel_dict = dict(zip(field_keys, cal_fields))
+                _ard = tel_dict.get("ard_time")
                 t_sec = float(_ard) / 1000.0 if (_ard is not None and float(_ard) > 0.0) else float(sys_t)
                 self.kinematic_engine.update(
                     t_sec,
-                    float(tel.get("dx", 0.0)),
-                    float(tel.get("dy", 0.0)),
-                    float(tel.get("dz", 0.0)),
+                    float(tel_dict.get("dx", 0.0)),
+                    float(tel_dict.get("dy", 0.0)),
+                    float(tel_dict.get("dz", 0.0)),
                 )
+                self._last_tel_data = tel_dict
 
-            last_tel = self.parser.get_telemetry(items[-1][1])
-            if last_tel is not None:
-                self._last_tel_data = last_tel
+            if kin_rows and logger and logger.is_open():
+                logger.log_kinematics_batch(kin_rows)
 
         return self._inject_kinematics(self._last_tel_data)
 

@@ -41,7 +41,7 @@ def hw_status_panel(state) -> ui.element:
     _prev_metrics_keys = {'_keys': None}
 
     def refresh():
-        metrics = state.hardware_metrics
+        metrics = state.hardware_metrics or {}
 
         # ── Odometers: update text in place ──
         for key in _ODO_KEYS:

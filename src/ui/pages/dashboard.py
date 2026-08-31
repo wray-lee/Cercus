@@ -48,6 +48,13 @@ def build_dashboard(state, controller):
                     ).props('dense unelevated')
                     stop_btn.disable()
 
+            # ── Sync button state with worker on page load/refresh ──
+            _btn_state = {'started': False}
+            if controller.worker_alive:
+                _btn_state['started'] = True
+                start_btn.disable()
+                stop_btn.enable()
+
             # ── Right column: live status + compact visualizations ──
             with ui.column().classes('h-full overflow-y-auto p-3 gap-2').style(
                 'flex: 1 1 0%; min-width: 0;'
@@ -94,7 +101,7 @@ def build_dashboard(state, controller):
     _setup_favicon()
 
     # ── Re-enable start on worker death (dashboard-only) ──
-    _btn_state = {'started': False}
+    # _btn_state was initialized above (line ~50) synced with controller.worker_alive
 
     def _check_worker_death():
         # Use controller.worker_alive directly — state.worker_died is transient (16ms)
@@ -125,7 +132,7 @@ def build_dashboard(state, controller):
             if hasattr(traj_container, '_traj_update'):
                 await traj_container._traj_update()
             await update_twin(twin_container, state.ui_twin)
-        except TimeoutError:
+        except Exception:
             pass
 
     visual_timer = ui.timer(0.05, visual_tick)
@@ -161,6 +168,9 @@ def _update_favicon(is_running):
 
 
 def _start(controller, get_form_values, state, start_btn, stop_btn, btn_state):
+    # Guard: don't reset state if worker is already running (e.g. page refresh)
+    if controller.worker_alive:
+        return
     from src.ui.controller import ExperimentController
     import logging
     log = logging.getLogger(__name__)
@@ -207,14 +217,18 @@ def _yield_focus_to_psychopy():
         time.sleep(1.5)
         try:
             import ctypes
+            import ctypes.wintypes
             user32 = ctypes.windll.user32
+            user32.FindWindowW.restype = ctypes.wintypes.HWND
+            user32.FindWindowW.argtypes = [ctypes.wintypes.LPCWSTR, ctypes.wintypes.LPCWSTR]
+            user32.ShowWindow.argtypes = [ctypes.wintypes.HWND, ctypes.c_int]
+            user32.ShowWindow.restype = ctypes.wintypes.BOOL
             hwnd = user32.FindWindowW(None, 'Cercus')
             if not hwnd:
-                hwnd = user32.GetForegroundWindow()
-            if hwnd:
-                user32.ShowWindow(hwnd, 6)   # SW_MINIMIZE
-                time.sleep(0.8)
-                user32.ShowWindow(hwnd, 4)   # SW_SHOWNOACTIVATE
+                return  # Window not found — don't touch unrelated windows
+            user32.ShowWindow(hwnd, 6)   # SW_MINIMIZE
+            time.sleep(0.8)
+            user32.ShowWindow(hwnd, 4)   # SW_SHOWNOACTIVATE
         except Exception:
             pass
 

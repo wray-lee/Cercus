@@ -76,7 +76,7 @@ def build_monitor(state, controller):
             if hasattr(traj_container, '_traj_update'):
                 await traj_container._traj_update()
             await update_twin(twin_container, state.ui_twin)
-        except TimeoutError:
+        except Exception:
             pass
 
     visual_timer = ui.timer(0.05, visual_tick)
@@ -92,6 +92,11 @@ _HIDDEN_KEYS = {'_output_dir', 'calib_matrix', 'Sync Topology'}
 def _update_config_grid(grid, cfg):
     if not cfg:
         return
+    # Cache check — skip rebuild if config hasn't changed
+    prev = getattr(grid, '_last_cfg', None)
+    if prev is not None and prev == cfg:
+        return
+    grid._last_cfg = dict(cfg)
     grid.clear()
     with grid:
         for k, v in cfg.items():

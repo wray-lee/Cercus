@@ -34,10 +34,17 @@ class CoreRenderer:
         "rect": "Rect",
     }
 
+    ALLOWED_CLASSES = {
+        "Circle", "Rect", "ShapeStim", "GratingStim", "ImageStim",
+        "TextStim", "ElementArrayStim", "Line", "Polygon",
+    }
+
     def _create_obj(self, cmd: dict) -> Any:
-        # New protocol: reflection-based instantiation
+        # New protocol: reflection-based instantiation (whitelist-gated)
         class_name = cmd.get("class_name")
         if class_name:
+            if class_name not in self.ALLOWED_CLASSES:
+                return None
             cls = getattr(self.visual, class_name, None)
             if cls is None:
                 return None
@@ -124,9 +131,12 @@ class CoreRenderer:
                 obj.size = (cmd["radius"] * 2, cmd["radius"] * 2)
                 obj._state_cache["radius"] = cmd["radius"]
 
-            if "pos" in cmd and obj._state_cache.get("pos") != cmd["pos"]:
-                obj.pos = cmd["pos"]
-                obj._state_cache["pos"] = cmd["pos"]
+            if "pos" in cmd:
+                # NumPy arrays produce element-wise != → wrap in tuple for safe caching
+                pos_val = tuple(cmd["pos"]) if hasattr(cmd["pos"], '__iter__') else cmd["pos"]
+                if obj._state_cache.get("pos") != pos_val:
+                    obj.pos = cmd["pos"]
+                    obj._state_cache["pos"] = pos_val
 
             if "width" in cmd and "height" in cmd:
                 sz = (cmd["width"], cmd["height"])
@@ -134,13 +144,17 @@ class CoreRenderer:
                     obj.size = sz
                     obj._state_cache["size"] = sz
 
-            if "fillColor" in cmd and obj._state_cache.get("fillColor") != cmd["fillColor"]:
-                obj.fillColor = cmd["fillColor"]
-                obj._state_cache["fillColor"] = cmd["fillColor"]
+            if "fillColor" in cmd:
+                fc = tuple(cmd["fillColor"]) if hasattr(cmd["fillColor"], '__iter__') else cmd["fillColor"]
+                if obj._state_cache.get("fillColor") != fc:
+                    obj.fillColor = cmd["fillColor"]
+                    obj._state_cache["fillColor"] = fc
 
-            if "lineColor" in cmd and obj._state_cache.get("lineColor") != cmd["lineColor"]:
-                obj.lineColor = cmd["lineColor"]
-                obj._state_cache["lineColor"] = cmd["lineColor"]
+            if "lineColor" in cmd:
+                lc = tuple(cmd["lineColor"]) if hasattr(cmd["lineColor"], '__iter__') else cmd["lineColor"]
+                if obj._state_cache.get("lineColor") != lc:
+                    obj.lineColor = cmd["lineColor"]
+                    obj._state_cache["lineColor"] = lc
 
             if "lineWidth" in cmd and obj._state_cache.get("lineWidth") != cmd["lineWidth"]:
                 obj.lineWidth = cmd["lineWidth"]

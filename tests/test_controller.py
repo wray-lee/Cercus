@@ -105,3 +105,26 @@ def test_build_config_safe_float_fallback():
     form["viewing_distance_cm"] = "bad"
     cfg = ExperimentController.build_config(form)
     assert cfg["Viewing Distance (cm)"] == 30.0  # default fallback
+
+
+def test_safe_int_with_int_and_float():
+    from src.ui.controller import _safe_int
+    assert _safe_int(10, 1) == 10
+    assert _safe_int(10.5, 1) == 10
+    assert _safe_int("10", 1) == 10
+    assert _safe_int("invalid", 1) == 1
+
+
+def test_safe_int_nan_inf_fallback():
+    """_safe_int must not crash on float('nan') or float('inf')."""
+    from src.ui.controller import _safe_int
+    assert _safe_int(float('nan'), 99) == 99
+    assert _safe_int(float('inf'), 99) == 99
+    assert _safe_int(float('-inf'), 99) == 99
+
+
+def test_safe_int_bool_returns_default():
+    """_safe_int should not coerce True/False to 1/0."""
+    from src.ui.controller import _safe_int
+    assert _safe_int(True, 42) == 42
+    assert _safe_int(False, 42) == 42

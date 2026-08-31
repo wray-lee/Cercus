@@ -29,6 +29,9 @@ def _global_poll():
             # Worker died without sending a terminal event
             controller.terminal_status = 'worker_error'
             controller.terminal_error = 'Worker process exited unexpectedly'
+        # Sync AppState so UI badges/status strip reflect the death
+        state.worker_status = controller.terminal_status
+        state.worker_error = controller.terminal_error
         controller.cleanup_worker()
 
 

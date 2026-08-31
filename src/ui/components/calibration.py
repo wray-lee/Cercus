@@ -69,7 +69,15 @@ def calibration_display(controller) -> ui.element:
     return card
 
 
+_UNSET = object()
+
+
 def _render_matrix(grid, matrix):
+    # Cache check — skip rebuild if matrix hasn't changed
+    prev = getattr(grid, '_last_matrix', _UNSET)
+    if prev is not _UNSET and prev == matrix:
+        return
+    grid._last_matrix = [row[:] for row in matrix] if matrix else None
     grid.clear()
     if not matrix:
         with grid:

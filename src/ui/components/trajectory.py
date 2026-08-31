@@ -28,16 +28,30 @@ def trajectory_canvas(state) -> ui.element:
             f'style="width:100%;aspect-ratio:1;display:block;"></canvas>'
         )
 
+    # Python-side signature cache to avoid redundant WebSocket sends
+    _last_sig = {'sig': None}
+
     async def update():
         bbox = state.trail_bbox
+        pts = state.trail_points[-1000:]
+        angle = state.trail_angle
+        # Compute signature matching JS side
+        first = pts[0] if pts else (0, 0)
+        last = pts[-1] if pts else (0, 0)
+        sig = (len(pts), first[0], first[1], last[0], last[1], angle,
+               bbox[0] if bbox else None, bbox[1] if bbox else None,
+               bbox[2] if bbox else None, bbox[3] if bbox else None)
+        if sig == _last_sig['sig']:
+            return
+        _last_sig['sig'] = sig
         data = {
             'canvasId': canvas_id,
-            'trail_points': state.trail_points[-1000:],
+            'trail_points': pts,
             'min_x': bbox[0] if bbox else None,
             'max_x': bbox[1] if bbox else None,
             'min_y': bbox[2] if bbox else None,
             'max_y': bbox[3] if bbox else None,
-            'angle': state.trail_angle,
+            'angle': angle,
         }
         await ui.run_javascript(f'window.cercusTraj && window.cercusTraj({json.dumps(data)})')
 

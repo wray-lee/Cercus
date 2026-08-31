@@ -19,16 +19,20 @@
   window.cercusTraj = function(data) {
     const cv = document.getElementById(data.canvasId);
     if (!cv) return;
+
+    // sizeCanvas BEFORE signature check — resize must happen even when data is unchanged
+    const ctx = cv.getContext('2d');
+    const { dpr, sx, sy } = sizeCanvas(cv, 150, 150);
+
     const pts = data.trail_points || [];
     const angle = data.angle || 0;
     const first = pts.length ? pts[0] : [0,0];
     const last = pts.length ? pts[pts.length-1] : [0,0];
-    const sig = pts.length + '|' + first[0] + '|' + first[1] + '|' + last[0] + '|' + last[1] + '|' + angle;
+    const sig = pts.length + '|' + first[0] + '|' + first[1] + '|' + last[0] + '|' + last[1] + '|' + angle
+              + '|' + (data.min_x||0) + '|' + (data.max_x||0) + '|' + (data.min_y||0) + '|' + (data.max_y||0)
+              + '|' + cv.width + '|' + cv.height;
     if (sig === lastSigs[data.canvasId]) return;
     lastSigs[data.canvasId] = sig;
-
-    const ctx = cv.getContext('2d');
-    const { dpr, sx, sy } = sizeCanvas(cv, 150, 150);
     ctx.setTransform(dpr * sx, 0, 0, dpr * sy, 0, 0);
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, 150, 150);
