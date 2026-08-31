@@ -15,7 +15,7 @@ def config_panel(on_paradigm_change=None) -> tuple:
         ui.label('Experiment Configuration').classes('text-sm font-bold text-zinc-200 mb-2')
 
         with ui.row().classes('w-full items-center gap-2'):
-            subject_input = ui.input('Subject ID', value='cricket_001').classes('flex-grow')
+            subject_input = ui.input('Subject ID', value='').classes('flex-grow')
             ui.button('New', on_click=lambda: _new_subject(subject_input)).classes('text-xs')
 
         paradigm_names = list(PARADIGM_REGISTRY.keys())
@@ -35,7 +35,15 @@ def config_panel(on_paradigm_change=None) -> tuple:
             iti_input = ui.input('ITI Range (sec)', value='60-90').classes('flex-grow')
             isi_input = ui.input('ISI Range (sec)', value='300-300').classes('flex-grow')
 
-        serial_input = ui.input('Serial Port', value='mock').classes('w-full')
+        # Detect available serial ports
+        try:
+            import serial.tools.list_ports
+            ports = [p.device for p in serial.tools.list_ports.comports()]
+            port_options = ['mock'] + ports if ports else ['mock']
+        except ImportError:
+            port_options = ['mock']
+
+        serial_input = ui.select('Serial Port', options=port_options, value='mock').classes('w-full')
 
         with ui.row().classes('w-full gap-2'):
             screen_id = ui.number('Screen ID', value=1, min=0, step=1).classes('flex-grow')
