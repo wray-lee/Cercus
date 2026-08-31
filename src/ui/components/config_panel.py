@@ -10,30 +10,29 @@ def config_panel(on_paradigm_change=None) -> tuple:
     form_values: Dict[str, Any] = {}
     param_container = None
 
-    with ui.card().classes('w-full') as card:
-        # --- Fixed config fields ---
-        ui.label('Experiment Configuration').classes('text-sm font-bold text-zinc-200 mb-2')
+    with ui.card().classes('w-full glass-card') as card:
+        # --- Fixed config fields (two-column grid for compactness) ---
+        ui.label('Configuration').classes('text-xs font-bold text-zinc-200 mb-1')
 
-        with ui.row().classes('w-full items-center gap-2'):
-            subject_input = ui.input('Subject ID', value='').classes('flex-grow')
-            ui.button('New', on_click=lambda: _new_subject(subject_input)).classes('text-xs')
+        with ui.row().classes('w-full items-center gap-1'):
+            subject_input = ui.input('Subject ID', value='').props('dense outlined').classes('flex-grow')
+            ui.button('New', on_click=lambda: _new_subject(subject_input)).props('dense size=sm').classes('text-[10px]')
 
         paradigm_names = list(PARADIGM_REGISTRY.keys())
         paradigm_select = ui.select(
             paradigm_names,
             value=paradigm_names[0] if paradigm_names else '',
             label='Paradigm',
-        ).classes('w-full')
+        ).props('dense outlined').classes('w-full')
 
-        pattern_select = ui.select([], label='Pattern').classes('w-full')
+        pattern_select = ui.select([], label='Pattern').props('dense outlined').classes('w-full')
 
-        with ui.row().classes('w-full gap-2'):
-            session_start = ui.number('Session Start', value=1, min=1, step=1).classes('flex-grow')
-            session_total = ui.number('Total Sessions', value=2, min=1, step=1).classes('flex-grow')
-
-        with ui.row().classes('w-full gap-2'):
-            iti_input = ui.input('ITI Range (sec)', value='60-90').classes('flex-grow')
-            isi_input = ui.input('ISI Range (sec)', value='300-300').classes('flex-grow')
+        # Two-column grid for compact layout
+        with ui.element('div').classes('grid grid-cols-2 gap-1 w-full'):
+            session_start = ui.number('Session Start', value=1, min=1, step=1).props('dense outlined')
+            session_total = ui.number('Total Sessions', value=2, min=1, step=1).props('dense outlined')
+            iti_input = ui.input('ITI (sec)', value='60-90').props('dense outlined')
+            isi_input = ui.input('ISI (sec)', value='300-300').props('dense outlined')
 
         # Detect available serial ports
         try:
@@ -43,21 +42,19 @@ def config_panel(on_paradigm_change=None) -> tuple:
         except ImportError:
             port_options = ['mock']
 
-        serial_input = ui.select('Serial Port', options=port_options, value='mock').classes('w-full')
+        serial_input = ui.select(port_options, value='mock', label='Serial Port').props('dense outlined').classes('flex-grow')
 
-        with ui.row().classes('w-full gap-2'):
-            screen_id = ui.number('Screen ID', value=1, min=0, step=1).classes('flex-grow')
-            resolution_input = ui.input('Resolution', value='3840, 1080').classes('flex-grow')
+        with ui.element('div').classes('grid grid-cols-2 gap-1 w-full'):
+            screen_id = ui.number('Screen ID', value=1, min=0, step=1).props('dense outlined')
+            resolution_input = ui.input('Resolution', value='3840, 1080').props('dense outlined')
+            view_dist = ui.number('View Dist (cm)', value=30.0).props('dense outlined')
+            screen_w = ui.number('Screen W (cm)', value=53.0).props('dense outlined')
 
-        with ui.row().classes('w-full gap-2'):
-            view_dist = ui.number('Viewing Dist (cm)', value=30.0).classes('flex-grow')
-            screen_w = ui.number('Screen Width (cm)', value=53.0).classes('flex-grow')
-
-        debug_switch = ui.switch('Debug Mode', value=False)
+        debug_switch = ui.switch('Debug Mode', value=False).props('dense')
 
         # --- Dynamic paradigm params ---
-        ui.separator()
-        ui.label('Paradigm Parameters').classes('text-sm font-semibold text-zinc-300')
+        ui.separator().classes('my-1')
+        ui.label('Paradigm Parameters').classes('text-xs font-semibold text-zinc-300 mb-1')
         param_container = ui.column().classes('w-full gap-1')
 
     # Store references
@@ -94,21 +91,21 @@ def config_panel(on_paradigm_change=None) -> tuple:
                 default = meta.get('default', '')
 
                 if p_type == 'info':
-                    ui.label(label).classes('text-xs text-zinc-500 italic')
+                    ui.label(label).classes('text-[10px] text-zinc-500 italic')
                 elif p_type == 'choice':
-                    w = ui.select(meta.get('choices', []), value=str(default), label=label).classes('w-full')
+                    w = ui.select(meta.get('choices', []), value=str(default), label=label).props('dense outlined').classes('w-full')
                     _refs['param_widgets'][key] = w
                 elif p_type == 'bool':
-                    w = ui.switch(label, value=bool(default))
+                    w = ui.switch(label, value=bool(default)).props('dense')
                     _refs['param_widgets'][key] = w
                 elif p_type == 'int':
-                    w = ui.number(label, value=int(default) if default != '' else 0).classes('w-full')
+                    w = ui.number(label, value=int(default) if default != '' else 0).props('dense outlined').classes('w-full')
                     _refs['param_widgets'][key] = w
                 elif p_type == 'float':
-                    w = ui.number(label, value=float(default) if default != '' else 0.0).classes('w-full')
+                    w = ui.number(label, value=float(default) if default != '' else 0.0).props('dense outlined').classes('w-full')
                     _refs['param_widgets'][key] = w
                 else:
-                    w = ui.input(label, value=str(default)).classes('w-full')
+                    w = ui.input(label, value=str(default)).props('dense outlined').classes('w-full')
                     _refs['param_widgets'][key] = w
 
         if on_paradigm_change:

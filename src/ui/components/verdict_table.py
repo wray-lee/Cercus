@@ -13,18 +13,18 @@ def verdict_table(state) -> ui.element:
     """Create verdict table card bound to AppState."""
     with ui.card().classes('w-full') as card:
         with ui.row().classes('items-center gap-2 mb-1'):
-            ui.label('Verdicts').classes('text-sm font-semibold text-zinc-300')
-            summary_label = ui.label('').classes('text-xs text-zinc-500 mono')
+            ui.label('Verdicts').classes('text-xs font-semibold text-zinc-300')
+            summary_label = ui.label('').classes('text-[10px] text-zinc-500 mono')
 
         columns = [
-            {'name': 'trial', 'label': '#', 'field': 'trial', 'align': 'center', 'style': 'width: 40px'},
-            {'name': 'side', 'label': 'Side', 'field': 'side', 'align': 'center'},
-            {'name': 'response', 'label': 'Response', 'field': 'response', 'align': 'center'},
-            {'name': 'disp', 'label': 'Disp(mm)', 'field': 'disp', 'align': 'right'},
-            {'name': 'angle', 'label': 'Angle(°)', 'field': 'angle', 'align': 'right'},
+            {'name': 'trial', 'label': '#', 'field': 'trial', 'align': 'center', 'style': 'width: 30px; font-size: 10px'},
+            {'name': 'side', 'label': 'Side', 'field': 'side', 'align': 'center', 'style': 'font-size: 10px'},
+            {'name': 'response', 'label': 'Response', 'field': 'response', 'align': 'center', 'style': 'font-size: 10px'},
+            {'name': 'disp', 'label': 'Disp', 'field': 'disp', 'align': 'right', 'style': 'font-size: 10px'},
+            {'name': 'angle', 'label': 'Angle', 'field': 'angle', 'align': 'right', 'style': 'font-size: 10px'},
         ]
-        table = ui.table(columns=columns, rows=[], row_key='trial').classes('w-full')
-        table.style('max-height: 120px; overflow-y: auto')
+        table = ui.table(columns=columns, rows=[], row_key='trial').props('dense flat').classes('w-full text-[10px]')
+        table.style('max-height: 140px; overflow-y: auto')
 
     def refresh():
         rows = []

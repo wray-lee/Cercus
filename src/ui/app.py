@@ -35,6 +35,14 @@ def main():
     from src.ui.pages.dashboard import build_dashboard
     from src.ui.pages.monitor import build_monitor
 
+    # Configure native window (before ui.run)
+    app.native.window_args.update({
+        'frameless': True,
+        'easy_drag': False,
+        'background_color': '#0A0A0B',
+    })
+    app.native.settings['DRAG_REGION_SELECTOR'] = '.drag-handle'
+
     # Auto-load calibration matrix if available
     controller.load_calibration_matrix()
 
@@ -64,9 +72,10 @@ def main():
         native=True,
         host='0.0.0.0',
         port=8080,
-        title='Cercus · Experiment Dashboard',
+        title='Cercus',
         window_size=(1400, 900),
         reload=False,
+        frameless=True,
     )
 
 

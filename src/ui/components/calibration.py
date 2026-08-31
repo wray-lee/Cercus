@@ -5,15 +5,15 @@ from nicegui import ui
 
 def calibration_panel(controller) -> ui.element:
     """Collapsible calibration panel showing the 3x3 matrix."""
-    with ui.expansion('Calibration Matrix', icon='grid_on').classes('w-full') as panel:
+    with ui.expansion('Calibration Matrix', icon='grid_on').props('dense').classes('w-full text-xs') as panel:
         matrix_grid = ui.element('div').classes(
-            'grid grid-cols-3 gap-1 font-mono text-xs text-center'
+            'grid grid-cols-3 gap-1 font-mono text-[10px] text-center'
         )
-        status_label = ui.label('No matrix loaded').classes('text-xs text-zinc-500 mt-1')
+        status_label = ui.label('No matrix loaded').classes('text-[10px] text-zinc-500 mt-1')
 
-        with ui.row().classes('gap-2 mt-2'):
-            ui.button('Load from file', on_click=lambda: _load(controller, matrix_grid, status_label)).classes('text-xs')
-            ui.button('Apply', on_click=lambda: _apply(controller, status_label)).classes('text-xs')
+        with ui.row().classes('gap-1 mt-1'):
+            ui.button('Load', on_click=lambda: _load(controller, matrix_grid, status_label)).props('dense size=sm').classes('text-[10px]')
+            ui.button('Apply', on_click=lambda: _apply(controller, status_label)).props('dense size=sm').classes('text-[10px]')
 
     def refresh():
         _render_matrix(matrix_grid, controller.calib_matrix)
@@ -51,13 +51,13 @@ def _render_matrix(grid, matrix):
     if not matrix:
         with grid:
             for _ in range(9):
-                ui.label('—').classes('bg-[#0E0E11] rounded px-2 py-1 text-zinc-500')
+                ui.label('—').classes('bg-[#0E0E11] rounded px-1 py-0.5 text-[10px] text-zinc-500')
         return
     with grid:
         for row in matrix:
             for val in row:
-                v = f'{val:.4f}' if isinstance(val, (int, float)) else str(val)
-                ui.label(v).classes('bg-[#0E0E11] rounded px-2 py-1 text-zinc-200')
+                v = f'{val:.3f}' if isinstance(val, (int, float)) else str(val)
+                ui.label(v).classes('bg-[#0E0E11] rounded px-1 py-0.5 text-[10px] text-zinc-200')
 
 
 def _load(controller, grid, status):
