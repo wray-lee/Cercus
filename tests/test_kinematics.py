@@ -143,3 +143,25 @@ def test_buf_dt_5ms_threshold():
     # Speed should be calculated (non-zero move_speed)
     assert eng.move_speed > 0.0
 
+
+def test_effective_speed_returns_peak_when_nonzero():
+    """effective_speed returns peak_move_speed when it > 0."""
+    eng = _make_engine()
+    eng._peak_move_speed = 200.0
+    eng._move_speed = 50.0
+    assert eng.effective_speed == 200.0
+
+
+def test_effective_speed_falls_back_to_move_speed():
+    """effective_speed returns move_speed when peak is 0."""
+    eng = _make_engine()
+    eng._peak_move_speed = 0.0
+    eng._move_speed = 42.0
+    assert eng.effective_speed == 42.0
+
+
+def test_quiet_speed_threshold_is_class_constant():
+    """QUIET_SPEED_THRESHOLD is accessible and used by stationary trigger."""
+    assert hasattr(KinematicEngine, 'QUIET_SPEED_THRESHOLD')
+    assert KinematicEngine.QUIET_SPEED_THRESHOLD == 15.0
+

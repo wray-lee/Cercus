@@ -71,6 +71,13 @@ class GenericWorker:
         self.kinematic_engine = KinematicEngine(
             error_callback=self._kinematic_error_handler
         )
+        # Precomputed field lookup for zero-allocation _drain_hardware
+        self._field_keys = self.parser.field_keys
+        _fk = self._field_keys
+        self._ard_time_idx = _fk.index("ard_time") if "ard_time" in _fk else -1
+        self._dx_idx = _fk.index("dx") if "dx" in _fk else -1
+        self._dy_idx = _fk.index("dy") if "dy" in _fk else -1
+        self._dz_idx = _fk.index("dz") if "dz" in _fk else -1
 
     def _push_telemetry_debounced(self, session_num: int, trial_idx: int, total_trials: int, data: dict, hw_tel: dict = None):
         now = time.monotonic()
@@ -138,30 +145,37 @@ class GenericWorker:
             # and kinematic update.  parse() calls _apply_calibration() which
             # mutates the spatial hysteresis accumulator; calling it again via
             # get_telemetry() would double-count every sample.
-            field_keys = [h for _, _, h in self.parser._field_defs]
+            #
+            # Zero-allocation: field_keys, index lookups precomputed in __init__.
             kin_rows = []
+            log_open = logger and logger.is_open()
+            g_id = logger.global_trial_id if log_open else 0
+            ard_idx = self._ard_time_idx
+            dx_idx = self._dx_idx
+            dy_idx = self._dy_idx
+            dz_idx = self._dz_idx
+            field_keys = self._field_keys
             for sys_t, raw in items:
-                row = self.parser.parse(sys_t, raw,
-                                       logger.global_trial_id if (logger and logger.is_open()) else 0)
+                row = self.parser.parse(sys_t, raw, g_id)
                 if row is None:
                     continue
-                if logger and logger.is_open():
+                if log_open:
                     kin_rows.append(row)
                 # row layout: [sys_time_str, field0, field1, ..., g_id]
-                # Extract calibrated fields (skip sys_time at [0] and g_id at [-1])
+                # Extract calibrated fields by precomputed index (skip sys_time[0], g_id[-1])
                 cal_fields = row[1:-1]
-                tel_dict = dict(zip(field_keys, cal_fields))
-                _ard = tel_dict.get("ard_time")
+                _ard = cal_fields[ard_idx] if ard_idx >= 0 else None
                 t_sec = float(_ard) / 1000.0 if (_ard is not None and float(_ard) > 0.0) else float(sys_t)
                 self.kinematic_engine.update(
                     t_sec,
-                    float(tel_dict.get("dx", 0.0)),
-                    float(tel_dict.get("dy", 0.0)),
-                    float(tel_dict.get("dz", 0.0)),
+                    float(cal_fields[dx_idx]) if dx_idx >= 0 else 0.0,
+                    float(cal_fields[dy_idx]) if dy_idx >= 0 else 0.0,
+                    float(cal_fields[dz_idx]) if dz_idx >= 0 else 0.0,
                 )
-                self._last_tel_data = tel_dict
+                # Build tel_dict only for the last item (used by _inject_kinematics)
+                self._last_tel_data = dict(zip(field_keys, cal_fields))
 
-            if kin_rows and logger and logger.is_open():
+            if kin_rows and log_open:
                 logger.log_kinematics_batch(kin_rows)
 
         return self._inject_kinematics(self._last_tel_data)

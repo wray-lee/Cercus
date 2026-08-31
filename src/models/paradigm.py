@@ -244,7 +244,7 @@ class BaseParadigm(ABC):
         """
         disp = engine.cum_disp
         angle = abs(engine.cum_dz)
-        speed = engine.peak_move_speed if getattr(engine, 'peak_move_speed', 0.0) > 0.0 else engine.move_speed
+        speed = engine.effective_speed
 
         cfg = getattr(self, 'config', {})
         escape_mm = float(cfg.get('escape_threshold_mm', 15.0))

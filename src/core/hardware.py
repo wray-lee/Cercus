@@ -39,6 +39,13 @@ class KinematicsParser:
         self._has_spatial = all(k in self._idx_map for k in ("dx", "dy", "dz"))
         # Reusable output buffer (avoids list() allocation per frame)
         self._out_buf: list = [d for _, d, _ in self._field_defs]
+        # Public-facing field keys tuple (precomputed for zero-allocation consumers)
+        self._field_keys: tuple = tuple(h for _, _, h in self._field_defs)
+
+    @property
+    def field_keys(self) -> tuple:
+        """Public accessor for field key names (zero-allocation: precomputed tuple)."""
+        return self._field_keys
 
     def get_headers(self) -> list:
         return ["sys_time"] + [h for _, _, h in self._field_defs] + ["global_trial_id"]

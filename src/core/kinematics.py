@@ -11,6 +11,10 @@ class KinematicEngine:
     heap allocation in update() and evaluate_trigger().
     """
 
+    # Default quiet-speed threshold (units/sec) for stationary trigger detection.
+    # Paradigms may override via evaluate_trigger's quiet_threshold parameter.
+    QUIET_SPEED_THRESHOLD: float = 15.0
+
     # Pre-allocated slot names (documented for clarity; all are plain floats)
     __slots__ = (
         "_error_cb",
@@ -82,6 +86,11 @@ class KinematicEngine:
     def peak_move_speed(self) -> float:
         """Peak movement speed reached during trial (units/sec)."""
         return self._peak_move_speed
+
+    @property
+    def effective_speed(self) -> float:
+        """Best available speed metric: peak if recorded, else instantaneous."""
+        return self._peak_move_speed if self._peak_move_speed > 0.0 else self._move_speed
 
     @property
     def cum_disp(self) -> float:
@@ -273,7 +282,7 @@ class KinematicEngine:
                 # Instantaneous speed check (speed_duration_ms == 0)
                 if threshold_speed == 0.0:
                     # Stationary trigger: speed must be below quiet threshold
-                    if self._move_speed <= 15.0:
+                    if self._move_speed <= self.QUIET_SPEED_THRESHOLD:
                         return True
                 else:
                     # Motion trigger: current speed meets threshold

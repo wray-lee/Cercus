@@ -81,6 +81,13 @@ def test_out_buf_precomputed():
     assert len(p._out_buf) == len(p._field_defs)
 
 
+def test_field_keys_property():
+    """field_keys should be a public tuple matching _field_defs keys."""
+    p = _make_parser()
+    assert isinstance(p.field_keys, tuple)
+    assert p.field_keys == ('ard_time', 'dx', 'dy', 'dz', 'stim_state')
+
+
 def test_calibration_matrix_applied():
     """Verify calibration matrix transforms displacements."""
     p = _make_parser()
