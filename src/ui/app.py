@@ -1,6 +1,12 @@
 """NiceGUI application entry point.
 
 Run with: python main.py
+
+NiceGUI script mode detects any UI element created at module/global scope.
+If ui.page decorators are also present, it raises RuntimeError. Therefore:
+- All ui.page definitions go inside main()
+- No UI calls (ui.add_css, ui.dark_mode, etc.) at global scope
+- Theme is applied per-page inside build_dashboard / build_monitor
 """
 import multiprocessing as mp
 import secrets
@@ -31,13 +37,9 @@ def _global_poll():
 def main():
     mp.set_start_method('spawn', force=True)
 
-    # Lazy import nicegui to avoid import-time side effects in worker spawns
     from nicegui import ui, app
-    from src.ui.theme import apply_theme
     from src.ui.pages.dashboard import build_dashboard
     from src.ui.pages.monitor import build_monitor
-
-    apply_theme()
 
     # Auto-load calibration matrix if available
     controller.load_calibration_matrix()

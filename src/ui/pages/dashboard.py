@@ -11,11 +11,9 @@ from src.ui.components.common import fmt_val, color_pill, update_worker_badge
 
 
 def build_dashboard(state, controller):
-    """Build the full dashboard UI. Called inside @ui.page handler.
-
-    Polling is handled by the global app.timer in app.py — this page
-    only reads shared state and updates its own widgets.
-    """
+    """Build the full dashboard UI. Called inside @ui.page handler."""
+    from src.ui.theme import apply_theme
+    apply_theme()
 
     # ── Two-column layout ──
     with ui.row().classes('w-full h-screen gap-0 no-wrap'):

@@ -10,11 +10,9 @@ from src.ui.components.common import fmt_val, color_pill, update_worker_badge
 
 
 def build_monitor(state, controller):
-    """Build the read-only monitor UI. Called inside @ui.page handler.
-
-    Polling is handled by the global app.timer in app.py — this page
-    only reads shared state and updates its own widgets.
-    """
+    """Build the read-only monitor UI. Called inside @ui.page handler."""
+    from src.ui.theme import apply_theme
+    apply_theme()
 
     with ui.column().classes('w-full max-w-5xl mx-auto p-4 gap-3'):
         # Header
