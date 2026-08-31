@@ -21,9 +21,9 @@ def build_dashboard(state, controller):
         titlebar()
 
         # ── Main body: two columns ──
-        with ui.row().classes('w-full flex-grow gap-0 overflow-hidden'):
+        with ui.row().classes('w-full flex-grow gap-0').style('min-height: 0; overflow: hidden;'):
             # ── Left column: config + controls (fixed 360px, scrollable) ──
-            with ui.column().classes('w-[360px] min-w-[360px] h-full overflow-y-auto p-3 gap-2 border-r border-[#262629]'):
+            with ui.column().classes('w-[360px] min-w-[360px] h-full overflow-y-auto p-3 gap-2 border-r border-[#262629]').style('flex-shrink: 0;'):
                 cfg_card, get_form_values = config_panel()
 
                 ui.separator()
@@ -35,7 +35,7 @@ def build_dashboard(state, controller):
                     stop_btn.disable()
 
             # ── Right column: live status + compact visualizations ──
-            with ui.column().classes('flex-grow h-full overflow-y-auto p-3 gap-2'):
+            with ui.column().classes('h-full overflow-y-auto p-3 gap-2').style('flex: 1 1 0%; min-width: 0;'):
                 # Status bar
                 with ui.row().classes('w-full items-center gap-2 mb-1'):
                     # Status dot + phase
@@ -47,37 +47,32 @@ def build_dashboard(state, controller):
                     worker_badge = ui.label('IDLE').classes('mono text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-zinc-700 text-zinc-400')
                     status_label = ui.label('Ready').classes('text-[10px] text-zinc-400 ml-auto')
 
-                # Responsive grid: stimulus + trajectory side by side
-                with ui.element('div').classes('w-full').style(
-                    'display: grid; '
-                    'grid-template-columns: 1fr minmax(200px, 280px); '
-                    'gap: 8px;'
-                ):
+                # Stimulus + Trajectory side by side
+                with ui.row().classes('w-full gap-2').style('min-width: 0;'):
                     # Twin preview
-                    with ui.card().classes('min-w-0'):
+                    with ui.card().classes('min-w-0').style('flex: 1 1 0%;'):
                         ui.label('Stimulus').classes('text-xs font-semibold text-zinc-300 mb-1')
                         twin_container = twin_preview_canvas()
 
                     # Trajectory + kinematic
-                    with ui.card().classes('min-w-0'):
+                    with ui.card().classes('min-w-0').style('flex: 0 0 auto; width: 260px;'):
                         ui.label('Trajectory').classes('text-xs font-semibold text-zinc-300 mb-1')
                         with ui.row().classes('w-full gap-2'):
                             traj_container = trajectory_canvas(state)
-                            traj_container.classes('flex-grow').style('max-width: 160px; aspect-ratio: 1;')
+                            traj_container.style('width: 140px; height: 140px; flex-shrink: 0;')
                             with ui.column().classes('gap-0.5 justify-center'):
                                 kin_angle = ui.label('θ: —').classes('mono text-[10px] text-zinc-300')
                                 kin_turn = ui.label('ω: —').classes('mono text-[10px] text-zinc-300')
                                 kin_disp = ui.label('D: —').classes('mono text-[10px] text-zinc-300')
 
-                # Responsive grid: hardware + verdicts + calibration
-                with ui.element('div').classes('w-full').style(
-                    'display: grid; '
-                    'grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); '
-                    'gap: 8px;'
-                ):
+                # Hardware + Verdicts + Calibration
+                with ui.row().classes('w-full gap-2').style('flex-wrap: wrap; min-width: 0;'):
                     hw = hw_status_panel(state)
+                    hw.style('flex: 1 1 240px; min-width: 0;')
                     verd = verdict_table(state)
+                    verd.style('flex: 1 1 240px; min-width: 0;')
                     calib = calibration_panel(controller)
+                    calib.style('flex: 1 1 240px; min-width: 0;')
 
     # ── Per-client UI sync (reads shared state, no queue polling) ──
     def tick():
