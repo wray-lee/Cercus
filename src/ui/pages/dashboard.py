@@ -1,6 +1,5 @@
 """Dashboard page — /dashboard (token-gated, native window, full controls)."""
-import json
-from nicegui import ui, app
+from nicegui import ui
 
 from src.ui.components.config_panel import config_panel
 from src.ui.components.calibration import calibration_panel
@@ -8,10 +7,15 @@ from src.ui.components.trajectory import trajectory_canvas
 from src.ui.components.twin_preview import twin_preview_canvas, update_twin
 from src.ui.components.verdict_table import verdict_table
 from src.ui.components.hw_status import hw_status_panel
+from src.ui.components.common import fmt_val, color_pill, update_worker_badge
 
 
 def build_dashboard(state, controller):
-    """Build the full dashboard UI. Called inside @ui.page handler."""
+    """Build the full dashboard UI. Called inside @ui.page handler.
+
+    Polling is handled by the global app.timer in app.py — this page
+    only reads shared state and updates its own widgets.
+    """
 
     # ── Two-column layout ──
     with ui.row().classes('w-full h-screen gap-0 no-wrap'):
@@ -62,41 +66,25 @@ def build_dashboard(state, controller):
             # Verdict table
             verd = verdict_table(state)
 
-    # ── Periodic UI update (16ms ≈ 60Hz) ──
+    # ── Per-client UI sync (reads shared state, no queue polling) ──
     def tick():
-        events = controller.poll_telemetry()
-        state.apply(events)
-
-        # Handle worker death
-        if state.worker_died:
-            terminal = events.get('terminal')
-            if terminal:
-                action = terminal.get('action', '')
-                controller.terminal_status = action
-                controller.terminal_error = terminal.get('error', '')
-            controller.cleanup_worker()
+        # Re-enable start button when worker dies
+        if state.worker_died and not controller.worker_alive:
             start_btn.enable()
             stop_btn.disable()
 
-        # Update phase pill
         phase_pill.text = state.phase
-        _color_pill(phase_pill, state.ui_color)
-
-        # Session / trial
+        color_pill(phase_pill, state.ui_color)
         sess_label.text = f'session {state.session_num}'
         trial_label.text = f'trial {state.trial_idx} / {state.total_trials}'
-
-        # Worker badge
-        _update_worker_badge(worker_badge, state.worker_status, state.worker_error)
+        update_worker_badge(worker_badge, state.worker_status, state.worker_error)
         status_label.text = state.status_text
 
-        # Kinematic readouts
         km = state.kinematic
-        kin_angle.text = f"θ: {_fmt(km.get('k_angle'))}"
-        kin_turn.text = f"ω: {_fmt(km.get('k_turn_speed'))}"
-        kin_disp.text = f"D: {_fmt(km.get('k_disp'))}"
+        kin_angle.text = f"θ: {fmt_val(km.get('k_angle'))}"
+        kin_turn.text = f"ω: {fmt_val(km.get('k_turn_speed'))}"
+        kin_disp.text = f"D: {fmt_val(km.get('k_disp'))}"
 
-        # Component refreshes
         verd._verdict_refresh()
         hw._hw_refresh()
         calib._calib_refresh()
@@ -121,6 +109,7 @@ def _start(controller, get_form_values, state, start_btn, stop_btn):
     state.reset()
     state.status_text = 'Running...'
     state.worker_status = 'running'
+    state.config_snapshot = config  # populate for /monitor display
     controller.start_experiment(config)
     start_btn.disable()
     stop_btn.enable()
@@ -129,38 +118,3 @@ def _start(controller, get_form_values, state, start_btn, stop_btn):
 def _stop(controller, stop_btn):
     controller.stop_experiment()
     stop_btn.disable()
-
-
-def _fmt(v):
-    if v is None:
-        return '—'
-    try:
-        return f'{float(v):.2f}'
-    except (ValueError, TypeError):
-        return str(v)
-
-
-def _color_pill(pill, color_name):
-    color_map = {
-        'cyan': 'bg-cyan-500', 'lime': 'bg-lime-500', 'green': 'bg-green-500',
-        'orange': 'bg-orange-500', 'red': 'bg-red-500', 'gray': 'bg-zinc-700',
-        'white': 'bg-zinc-300', 'yellow': 'bg-yellow-500',
-    }
-    cls = color_map.get(color_name, 'bg-zinc-700')
-    pill.classes(replace=f'mono text-xs font-bold px-2.5 py-1 rounded-full {cls} text-zinc-900')
-
-
-WORKER_COLORS = {
-    'running': ('bg-lime-500', 'RUNNING'),
-    'worker_done': ('bg-cyan-500', 'DONE'),
-    'worker_abort': ('bg-orange-500', 'ABORTED'),
-    'worker_error': ('bg-red-500', 'ERROR'),
-    'idle': ('bg-zinc-700', 'IDLE'),
-}
-
-
-def _update_worker_badge(badge, status, error):
-    bg, label = WORKER_COLORS.get(status, WORKER_COLORS['idle'])
-    text = label + (f' · {error}' if error else '')
-    badge.text = text
-    badge.classes(replace=f'mono text-[9px] font-bold px-2 py-0.5 rounded-full {bg} text-zinc-900')

@@ -21,6 +21,21 @@ state = AppState()
 DASHBOARD_TOKEN = secrets.token_urlsafe(32)
 
 
+def _global_poll():
+    """Single global polling loop — drains mp.Queue once, updates shared state.
+
+    Per-client timers would race on the same queue, splitting frames.
+    """
+    events = controller.poll_telemetry()
+    state.apply(events)
+    if state.worker_died:
+        terminal = events.get('terminal')
+        if terminal:
+            controller.terminal_status = terminal.get('action', '')
+            controller.terminal_error = terminal.get('error', '')
+        controller.cleanup_worker()
+
+
 @ui.page('/dashboard')
 def dashboard_page(token: str = ''):
     if token != DASHBOARD_TOKEN:
@@ -46,14 +61,15 @@ def main():
     # Auto-load calibration matrix if available
     controller.load_calibration_matrix()
 
-    # Configure native window to open dashboard with token
-    app.native.window_args['url'] = f'/dashboard?token={DASHBOARD_TOKEN}'
+    # Single global timer for telemetry polling (62.5 Hz)
+    app.on_startup(lambda: ui.timer(0.016, _global_poll))
 
     print(f'Dashboard token: {DASHBOARD_TOKEN}')
     print(f'Monitor available at: http://<host>:8080/monitor')
 
     ui.run(
         native=True,
+        native_url=f'/dashboard?token={DASHBOARD_TOKEN}',
         host='0.0.0.0',
         port=8080,
         title='Cercus · Experiment Dashboard',

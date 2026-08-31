@@ -106,10 +106,11 @@ Pure Python, no NiceGUI dependency. Extracted from MasterDashboard:
 
 - `start_experiment(config: dict)` → spawn worker process, create queues
 - `stop_experiment()` → send POISON_PILL
-- `start_calibration(...)` / `stop_calibration()`
+- `load_calibration_matrix(path?)` → load 3×3 from json
+- `save_calibration_matrix(matrix, path?)` → write to json
 - `poll_telemetry()` → drain queue, return structured events
-- `build_config(params: dict) -> dict` — extracted from `_build_config()`
-- `kill_worker()`, `close_queues()`
+- `build_config(form: dict) -> dict` — static, extracted from `_build_config()`
+- `cleanup_worker()`
 - Properties: `worker_alive`, `calib_active`, `terminal_status`, `terminal_error`
 
 Does NOT hold UI state (no widgets, no labels, no StringVars).
@@ -141,14 +142,8 @@ class AppState:
     # Twin preview
     ui_twin: dict | None = None
 
-    # Calibration
-    calib_active: bool = False
-    calib_axis: str = ""
-    calib_raw: dict = {}
-    calib_matrix: list[list[float]] = []
-    calib_axis_results: dict = {}
-    calib_status: str = ""
-    calib_status_color: str = ""
+    # Calibration (matrix-only — no live axis process per Q8)
+    calib_matrix: list[list[float]] = []  # loaded from json
 
     # Verdicts
     verdict_history: list[dict] = []
@@ -156,23 +151,27 @@ class AppState:
 
     # Config (for monitor display)
     config_snapshot: dict = {}
-    paradigm_schema: dict = {}
-    paradigm_params: dict = {}
 
-    # Controls state
-    can_start: bool = True
+    # Controls state (managed by UI callbacks, not polled)
+    # can_start / can_stop omitted — buttons enabled/disabled directly
     can_stop: bool = False
 ```
 
 ### 3. Polling Loop
 
 ```python
-# In app.py
+# In app.py — SINGLE global timer, not per-client
 controller = ExperimentController()
 state = AppState()
 
-def poll():
+def _global_poll():
     events = controller.poll_telemetry()
+    state.apply(events)
+    if state.worker_died:
+        controller.cleanup_worker()
+
+app.on_startup(lambda: ui.timer(0.016, _global_poll))  # 62.5 Hz
+# Per-client timers only read state — they never call poll_telemetry()
     state.apply(events)  # updates all reactive fields
     # NiceGUI auto-updates bound UI elements
 
