@@ -20,7 +20,7 @@ read-only observation. One codebase, one process, one server.
 | Q5 | Trajectory canvas | Custom Vue component wrapping existing Canvas JS |
 | Q6 | /dashboard access control | One-time `secrets.token_urlsafe(32)`, native window opens `/dashboard?token=<T>`, server rejects mismatched token |
 | Q7 | Dashboard layout | Two-column: left = config + control, right = live status + visualizations |
-| Q8 | Calibration panel | `ui.expansion("Calibration")` collapsible, in left column below config |
+| Q8 | Calibration panel | Matrix display only — load from json + Apply. No axis calibration UI (external tool). Collapsible. |
 | Q9 | /monitor permission isolation | Route-level — /monitor Python code contains no control buttons, no start/stop endpoint |
 | Q10 | File structure | Layer-based split (see below) |
 | Q11 | Branch | `feature/nicegui-dashboard`, merge to main, tag v2.0.0 |
@@ -81,7 +81,7 @@ src/ui/
 │   └── monitor.py          # /monitor page (read-only)
 ├── components/
 │   ├── config_panel.py     # Dynamic param form from paradigm schema
-│   ├── calibration.py      # Collapsible calibration panel
+│   ├── calibration.py      # Matrix display (load json + apply), collapsible
 │   ├── trajectory.py       # Trajectory canvas (Vue component wrapper)
 │   ├── trajectory.js       # Trajectory canvas (JS rendering: bbox, decimation, arrow)
 │   ├── twin_preview.py     # Twin stimulus preview (Vue component wrapper)
