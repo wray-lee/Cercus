@@ -3,6 +3,7 @@
 Pure Python, no UI framework dependency.  Extracted from MasterDashboard.
 """
 import json
+import logging
 import multiprocessing as mp
 import os
 import queue
@@ -11,6 +12,8 @@ import time
 from typing import Any, Dict, List, Optional
 
 from src.models.paradigm import PARADIGM_REGISTRY
+
+log = logging.getLogger(__name__)
 
 
 def _safe_int(val: str, default: int) -> int:
@@ -26,6 +29,45 @@ def _safe_float(val: str, default: float) -> float:
         return float(val)
     except (ValueError, TypeError):
         return default
+
+
+def _coerce_params(
+    params: Dict[str, Any], schema: Dict[str, Dict[str, Any]]
+) -> Dict[str, Any]:
+    """Coerce and clamp form values against their declared schema types.
+
+    A cleared numeric field arrives as ``None``; without this the worker would
+    receive it verbatim and die on ``int(None)``.  Values outside a declared
+    ``min``/``max`` are clamped rather than rejected, matching the widget's own
+    blur-time behaviour.  Keys absent from the schema (e.g. companion enable
+    flags) pass through untouched.
+    """
+    out: Dict[str, Any] = {}
+    for key, val in params.items():
+        meta = schema.get(key)
+        if meta is None:
+            out[key] = val
+            continue
+
+        p_type = meta.get("type", "info")
+        if p_type not in ("int", "float"):
+            out[key] = val
+            continue
+
+        default = meta.get("default", 0)
+        try:
+            num = float(val)
+        except (TypeError, ValueError):
+            num = float(default)
+
+        lo, hi = meta.get("min"), meta.get("max")
+        if lo is not None:
+            num = max(num, float(lo))
+        if hi is not None:
+            num = min(num, float(hi))
+
+        out[key] = int(round(num)) if p_type == "int" else num
+    return out
 
 
 class ExperimentController:
@@ -59,8 +101,12 @@ class ExperimentController:
             paradigm, pattern, subject_id, session_start, session_total,
             iti_range, isi_range, serial_port, screen_id, debug,
             viewing_distance_cm, screen_width_cm, resolution,
-            paradigm_params (optional dict of already-coerced values),
-            trigger_params (optional dict of kinematic trigger values).
+            paradigm_params (optional dict of raw widget values, coerced here).
+
+        ``paradigm_params`` carries the kinematic trigger values and their
+        companion enable flags as ordinary schema params; they must stay
+        flattened to the top level of the returned config because the worker
+        looks them up there.
         """
         root_dir = os.path.dirname(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -68,7 +114,11 @@ class ExperimentController:
         out_dir = os.path.join(root_dir, "data")
         os.makedirs(out_dir, exist_ok=True)
 
-        paradigm_params = dict(form.get("paradigm_params", {}))
+        p_cls = PARADIGM_REGISTRY.get(form.get("paradigm"))
+        schema = p_cls.get_full_schema() if p_cls else {}
+        paradigm_params = _coerce_params(
+            dict(form.get("paradigm_params", {})), schema
+        )
         exec_mode = paradigm_params.get("Execution Mode", "Auto")
 
         # Resolution parsing
@@ -105,12 +155,20 @@ class ExperimentController:
             "Sync Topology": [],
             "_output_dir": out_dir,
         }
+        # A paradigm schema key that shadows a framework-reserved key silently
+        # overrides operator input — e.g. SingleLooming declares its own
+        # "Screen Width (px)", which beats the Resolution field. That is
+        # deliberate for single-screen geometry, so the paradigm still wins;
+        # log it so the override is visible rather than invisible.
+        clash = sorted(set(paradigm_params) & set(cfg))
+        if clash:
+            log.warning(
+                "paradigm %r declares schema keys that shadow reserved config "
+                "keys %s; the paradigm's values take precedence over the "
+                "corresponding dashboard fields",
+                form.get("paradigm"), clash,
+            )
         cfg.update(paradigm_params)
-
-        # Kinematic trigger params
-        trigger = form.get("trigger_params", {})
-        if trigger:
-            cfg.update(trigger)
 
         return cfg
 
@@ -239,7 +297,7 @@ class ExperimentController:
         if self.worker_alive:
             return
         from src.workers.stimulus_worker import worker_entry
-        from src.core.ipc import create_ipc_queues
+        from src.workers.stimulus_worker import create_ipc_queues
 
         self.terminal_status = None
         self.terminal_error = ""

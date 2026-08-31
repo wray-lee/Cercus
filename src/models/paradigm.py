@@ -5,6 +5,18 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Tuple, Callable
 
 
+def schema_condition_met(current: Any, expected: Any) -> bool:
+    """Evaluate a ``visible_when`` condition's ``equals`` clause.
+
+    ``expected`` may be a single value or a tuple/list of accepted values.
+    Comparison is by string form so a schema may declare ``1`` against a
+    widget holding ``1.0``.
+    """
+    if isinstance(expected, (tuple, list, set)):
+        return any(str(current) == str(e) for e in expected)
+    return str(current) == str(expected)
+
+
 class BaseParadigm(ABC):
     @staticmethod
     def _apply_random_seed(config: dict) -> None:
@@ -48,10 +60,91 @@ class BaseParadigm(ABC):
 
     @classmethod
     def get_sync_channels(cls) -> List[str]:
-        """Return named sync trigger channels for this paradigm.
-        Each entry generates a Sync Block row in the dashboard topology UI.
+        """RESERVED — currently has no consumer.
+
+        The dashboard Sync Block topology UI that once rendered these was
+        removed in 35bf034; ``cfg["Sync Topology"]`` is still populated with
+        ``[]`` and read by nothing. Live photodiode sync goes through
+        ``_build_sync_markers`` instead. Overriding this has no effect.
         """
         return ["Sync Trigger"]
+
+    # ------------------------------------------------------------------
+    # Framework-level kinematic trigger (movement-gated trial start)
+    # ------------------------------------------------------------------
+
+    _KINEMATIC_GATE = {"param": "Execution Mode", "equals": "Kinematic"}
+
+    @classmethod
+    def get_kinematic_trigger_schema(cls) -> Dict[str, Dict[str, Any]]:
+        """Framework-level movement-gated trial start channels.
+
+        Returns ordinary schema entries (same contract as
+        ``get_parameter_schema``) plus three optional trigger-specific keys:
+
+        ``role``
+            Binds the channel to a ``KinematicEngine.evaluate_trigger``
+            argument: ``dist`` | ``angle`` | ``speed`` | ``speed_duration``.
+            The worker reads this instead of hardcoding key names, so a
+            paradigm may rename or substitute channels freely.
+        ``enable_key``
+            Name of the companion boolean flag. This is the ONLY definition of
+            that name — both the UI checkbox and the worker's lookup derive
+            from it, so the two cannot drift apart.
+        ``enable_default``
+            Initial state of that flag (default ``True``).
+
+        Return ``{}`` to opt out entirely. Override to rename the gate, change
+        defaults or bounds, or declare different channels.
+        """
+        g = cls._KINEMATIC_GATE
+        return {
+            "Trigger Dist (mm)": {
+                "type": "float", "default": 5.0, "min": 0.0, "max": 1000.0,
+                "label": "Trigger Dist (mm)", "role": "dist",
+                "enable_key": "Trigger Dist Enabled", "enable_default": False,
+                "visible_when": g,
+            },
+            "Trigger Angle (°)": {
+                "type": "float", "default": 10.0, "min": 0.0, "max": 360.0,
+                "label": "Trigger Angle (°)", "role": "angle",
+                "enable_key": "Trigger Angle Enabled", "enable_default": False,
+                "visible_when": g,
+            },
+            "Trigger Speed (units/s)": {
+                "type": "float", "default": 0.0, "min": 0.0, "max": 10000.0,
+                "label": "Trigger Speed (units/s)", "role": "speed",
+                "enable_key": "Trigger Speed Enabled", "enable_default": True,
+                "visible_when": g,
+            },
+            "Trigger Duration (ms)": {
+                "type": "float", "default": 2000.0, "min": 0.0, "max": 60000.0,
+                "label": "Trigger Duration (ms)", "role": "speed_duration",
+                "enable_key": "Trigger Speed Enabled",  # shares the speed gate
+                "visible_when": g,
+            },
+        }
+
+    @classmethod
+    def get_full_schema(cls) -> Dict[str, Dict[str, Any]]:
+        """Single entry point for UI form generation and config coercion.
+
+        Trigger channels first, paradigm-declared params second, so a paradigm
+        that declares a key of the same name WINS — one widget, its default.
+        """
+        merged: Dict[str, Dict[str, Any]] = dict(cls.get_kinematic_trigger_schema())
+        merged.update(cls.get_parameter_schema())
+        return merged
+
+    @classmethod
+    def kinematic_trigger_active(cls, config: dict) -> bool:
+        """Whether the kinematic wait applies. One gate definition, read by
+        both the UI (for visibility) and the worker (for control flow)."""
+        for meta in cls.get_kinematic_trigger_schema().values():
+            cond = meta.get("visible_when")
+            if cond and schema_condition_met(config.get(cond["param"]), cond["equals"]):
+                return True
+        return False
 
     @classmethod
     @abstractmethod
@@ -61,6 +154,25 @@ class BaseParadigm(ABC):
     @classmethod
     @abstractmethod
     def get_parameter_schema(cls) -> Dict[str, Dict[str, Any]]:
+        """Return the paradigm's parameter declarations.
+
+        Maps parameter name -> metadata dict. ``type`` is REQUIRED and must be
+        one of: ``info`` (static label, not collected into config), ``choice``
+        (requires ``choices``), ``bool``, ``int``, ``float``, ``string``,
+        ``filepath``. An unrecognised tag renders as a plain text input and
+        logs a warning.
+
+        Recognised metadata keys: ``type``, ``default``, ``label``, ``choices``,
+        ``min``, ``max`` (enforced on the widget and clamped in build_config),
+        and ``visible_when`` — ``{'param': <other key>, 'equals': <value or
+        tuple>}`` — which renders the entry only while that param matches.
+        Hidden entries are not collected into the config.
+
+        Keys are flattened onto the top level of the experiment config, so they
+        must not collide with framework-reserved names (``Subject ID``,
+        ``Total Sessions``, ``Screen Width (px)``, ``Debug Mode``, ...);
+        ``build_config`` raises on collision.
+        """
         pass
 
     @abstractmethod

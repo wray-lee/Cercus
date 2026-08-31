@@ -431,15 +431,29 @@ class GenericWorker:
                                 break
 
                     # --- Kinematic wait ---
-                    if self.config.get("Execution Mode") == "Kinematic":
+                    if self.paradigm.kinematic_trigger_active(self.config):
                         self.kinematic_engine.reset()
-                        trig_dist = float(self.config.get("Trigger Dist (mm)", 5.0))
-                        trig_angle = float(self.config.get("Trigger Angle (°)", 10.0))
-                        trig_speed = float(self.config.get("Trigger Speed (units/s)", 0.0))
-                        trig_speed_dur = float(self.config.get("Trigger Duration (ms)", 500.0))
-                        en_dist = bool(self.config.get("Trigger Dist Enabled", True))
-                        en_angle = bool(self.config.get("Trigger Angle Enabled", True))
-                        en_speed = bool(self.config.get("Trigger Speed Enabled", True))
+                        # Bind each declared channel to its evaluate_trigger
+                        # argument via its schema ``role``. Unset roles keep
+                        # their disable sentinel: 0.0 for dist/angle (see
+                        # kinematics.py:245/249), -1.0 for speed and 0.0 for
+                        # the window (a 0.0 SPEED means "stationary", not off).
+                        trig = {
+                            "dist": 0.0, "angle": 0.0,
+                            "speed": -1.0, "speed_duration": 0.0,
+                        }
+                        for key, meta in self.paradigm.get_kinematic_trigger_schema().items():
+                            role = meta.get("role")
+                            if role is None:
+                                continue
+                            en_key = meta.get("enable_key")
+                            if en_key and not bool(
+                                self.config.get(en_key, meta.get("enable_default", True))
+                            ):
+                                continue
+                            trig[role] = float(
+                                self.config.get(key, meta.get("default", 0.0))
+                            )
                         while True:
                             self._sync_state(clear_keys=False)
                             if self.abort_flag:
@@ -468,10 +482,10 @@ class GenericWorker:
                                 raise ExperimentAbort()
 
                             if self.kinematic_engine.evaluate_trigger(
-                                trig_dist if en_dist else 0.0,
-                                trig_angle if en_angle else 0.0,
-                                trig_speed if en_speed else -1.0,
-                                trig_speed_dur if en_speed else 0.0,
+                                trig["dist"],
+                                trig["angle"],
+                                trig["speed"],
+                                trig["speed_duration"],
                             ):
                                 break
 

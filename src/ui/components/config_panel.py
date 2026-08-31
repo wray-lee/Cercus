@@ -1,8 +1,17 @@
-"""Dynamic config panel — generates form from paradigm schema."""
+"""Dynamic config panel — generates form from paradigm schema.
+
+Every widget here is produced from ``BaseParadigm.get_full_schema()``. This
+module contains no paradigm names and no parameter names: visibility, enable
+flags and grouping are all declared in the schema layer, so a new paradigm
+never requires an edit to this file.
+"""
+import logging
 from typing import Dict, Any
 from nicegui import ui
 
-from src.models.paradigm import PARADIGM_REGISTRY
+from src.models.paradigm import PARADIGM_REGISTRY, schema_condition_met
+
+log = logging.getLogger(__name__)
 
 
 def config_panel(on_paradigm_change=None) -> tuple:
@@ -67,10 +76,65 @@ def config_panel(on_paradigm_change=None) -> tuple:
         'param_container': param_container, 'param_widgets': {},
     }
 
-    def rebuild_params(p_name=None):
+    def _snapshot():
+        """Capture current widget values so a rebuild can restore them."""
+        _refs['param_values'] = {
+            k: w.value for k, w in _refs['param_widgets'].items()
+        }
+
+    def _make_widget(key, meta, value):
+        """Build one widget from a schema entry, seeded with ``value``.
+
+        Returns None for non-input entries (``info``). Bounds declared in the
+        schema are passed through, which also re-activates NiceGUI's own
+        blur-time clamp on ui.number.
+        """
+        p_type = meta.get('type', 'info')
+        label = meta.get('label', key)
+        lo, hi = meta.get('min'), meta.get('max')
+
+        if p_type == 'info':
+            ui.label(label).classes('text-[10px] text-zinc-500 italic')
+            return None
+        if p_type == 'choice':
+            return ui.select(
+                meta.get('choices', []), value=str(value), label=label,
+            ).props('dense outlined').classes('w-full')
+        if p_type == 'bool':
+            return ui.switch(label, value=bool(value)).props('dense')
+        if p_type in ('int', 'float'):
+            cast = int if p_type == 'int' else float
+            try:
+                num = cast(value)
+            except (TypeError, ValueError):
+                num = cast(meta.get('default', 0))
+            return ui.number(
+                label, value=num, min=lo, max=hi,
+            ).props('dense outlined').classes('w-full')
+        if p_type == 'filepath':
+            with ui.row().classes('w-full items-center gap-1'):
+                w = ui.input(label, value=str(value)).props('dense outlined').classes('flex-grow')
+                ui.button(
+                    icon='folder_open', on_click=lambda: _pick_file(w),
+                ).props('dense flat size=sm').tooltip('Browse')
+            return w
+        if p_type != 'string':
+            log.warning(
+                "config_panel: schema key %r declares unrecognised type %r; "
+                "rendering as text input", key, p_type,
+            )
+        return ui.input(label, value=str(value)).props('dense outlined').classes('w-full')
+
+    def rebuild_params(p_name=None, _defer=False):
         p_name = p_name or paradigm_select.value
         p_cls = PARADIGM_REGISTRY.get(p_name)
         if not p_cls:
+            return
+
+        # Deleting the element that fired the event, from inside its own
+        # handler, leaves NiceGUI updating a dead widget. Reschedule instead.
+        if _defer:
+            ui.timer(0, lambda: rebuild_params(p_name), once=True)
             return
 
         # Update patterns
@@ -80,70 +144,81 @@ def config_panel(on_paradigm_change=None) -> tuple:
             pattern_select.value = patterns[0]
         pattern_select.update()
 
-        # Rebuild param form
+        schema = p_cls.get_full_schema()
+
+        # Carry operator edits across a rebuild; discard on paradigm change.
+        same_paradigm = _refs.get('param_paradigm') == p_name
+        saved = dict(_refs.get('param_values') or {}) if same_paradigm else {}
+
+        # Resolve effective values BEFORE rendering, so a visibility gate sees
+        # the operator's choice rather than a freshly-defaulted widget.
+        vals, enabled = {}, {}
+        for key, meta in schema.items():
+            if meta.get('type') == 'info':
+                continue
+            vals[key] = saved.get(key, meta.get('default', ''))
+            en_key = meta.get('enable_key')
+            if en_key:
+                enabled[en_key] = saved.get(
+                    en_key, meta.get('enable_default', True)
+                )
+
         param_container.clear()
         _refs['param_widgets'] = {}
-        schema = p_cls.get_parameter_schema()
+        _refs['param_paradigm'] = p_name
+        gate_params = set()
+
         with param_container:
-            # Render paradigm-specific parameters
             for key, meta in schema.items():
-                p_type = meta.get('type', 'string')
-                label = meta.get('label', key)
-                default = meta.get('default', '')
+                cond = meta.get('visible_when')
+                if cond:
+                    gate_params.add(cond['param'])
+                    if not schema_condition_met(vals.get(cond['param']), cond['equals']):
+                        continue  # hidden: not rendered, not collected
 
-                if p_type == 'info':
-                    ui.label(label).classes('text-[10px] text-zinc-500 italic')
-                elif p_type == 'choice':
-                    w = ui.select(meta.get('choices', []), value=str(default), label=label).props('dense outlined').classes('w-full')
-                    _refs['param_widgets'][key] = w
-                elif p_type == 'bool':
-                    w = ui.switch(label, value=bool(default)).props('dense')
-                    _refs['param_widgets'][key] = w
-                elif p_type == 'int':
-                    w = ui.number(label, value=int(default) if default != '' else 0).props('dense outlined').classes('w-full')
-                    _refs['param_widgets'][key] = w
-                elif p_type == 'float':
-                    w = ui.number(label, value=float(default) if default != '' else 0.0).props('dense outlined').classes('w-full')
-                    _refs['param_widgets'][key] = w
+                en_key = meta.get('enable_key')
+                if en_key:
+                    # Value + its enable flag share a row.
+                    with ui.row().classes('w-full items-center gap-1 no-wrap'):
+                        w = _make_widget(key, meta, vals.get(key))
+                        if w is not None:
+                            w.classes('flex-grow')
+                        if en_key not in _refs['param_widgets']:
+                            label = meta.get('label', key)
+                            cb = ui.checkbox(
+                                '', value=bool(enabled[en_key]),
+                            ).props(f'dense aria-label="Enable {label}"')
+                            _refs['param_widgets'][en_key] = cb
                 else:
-                    w = ui.input(label, value=str(default)).props('dense outlined').classes('w-full')
+                    w = _make_widget(key, meta, vals.get(key))
+
+                if w is not None:
                     _refs['param_widgets'][key] = w
 
-            # Conditionally add kinematic trigger parameters (framework-level)
-            exec_mode_widget = _refs['param_widgets'].get('Execution Mode')
-            if exec_mode_widget and exec_mode_widget.value == 'Kinematic':
-                ui.separator().classes('my-2')
-                ui.label('Kinematic Trigger').classes('text-xs font-semibold text-zinc-400 mb-1')
-
-                # Trigger parameters with enable checkboxes
-                trigger_params = [
-                    ('Trigger Dist (mm)', 5.0),
-                    ('Trigger Angle (°)', 10.0),
-                    ('Trigger Speed (units/s)', 0.0),
-                ]
-
-                for key, default in trigger_params:
-                    with ui.row().classes('w-full items-center gap-1'):
-                        w = ui.number(key, value=default).props('dense outlined').classes('flex-grow')
-                        w.enabled = (key == 'Trigger Speed (units/s)')  # Speed enabled by default
-                        _refs['param_widgets'][key] = w
-
-                        # Enable checkbox
-                        en_key = f'{key} Enabled'
-                        cb = ui.checkbox('', value=w.enabled).props('dense')
-                        cb.on_value_change(lambda e, widget=w: _toggle_trigger(widget, e.value))
-                        _refs['param_widgets'][en_key] = cb
-
-        # Re-bind execution mode change handler
-        exec_mode_widget = _refs['param_widgets'].get('Execution Mode')
-        if exec_mode_widget:
-            exec_mode_widget.on_value_change(lambda e: rebuild_params())
+        # Rebuild when any gating param changes — no literal key anywhere.
+        for dep in gate_params:
+            dep_widget = _refs['param_widgets'].get(dep)
+            if dep_widget:
+                dep_widget.on_value_change(
+                    lambda e, n=p_name: (_snapshot(), rebuild_params(n, _defer=True))
+                )
 
         if on_paradigm_change:
             on_paradigm_change(p_name)
 
-    def _toggle_trigger(widget, enabled):
-        widget.enabled = enabled
+    def _pick_file(input_widget):
+        """Populate a filepath input from a native picker when available."""
+        try:
+            from nicegui import app
+            window = getattr(app.native, 'main_window', None)
+            if window is not None:
+                paths = window.create_file_dialog()
+                if paths:
+                    input_widget.value = paths[0]
+                return
+        except Exception:  # pragma: no cover - picker is best-effort
+            log.debug('config_panel: native file dialog unavailable', exc_info=True)
+        ui.notify('Type the file path directly (no picker available)', type='info')
 
     paradigm_select.on_value_change(lambda e: rebuild_params(e.value))
     # Initial build
