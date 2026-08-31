@@ -4,8 +4,9 @@ from nicegui import ui
 
 
 def calibration_panel(controller) -> ui.element:
-    """Collapsible calibration panel showing the 3x3 matrix."""
-    with ui.expansion('Calibration Matrix', icon='grid_on').props('dense').classes('w-full text-xs') as panel:
+    """Compact calibration panel showing the 3x3 matrix."""
+    with ui.card().classes('w-full') as panel:
+        ui.label('Calibration').classes('text-xs font-semibold text-zinc-300 mb-1')
         matrix_grid = ui.element('div').classes(
             'grid grid-cols-3 gap-1 font-mono text-[10px] text-center'
         )

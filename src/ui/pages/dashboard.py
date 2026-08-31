@@ -25,7 +25,6 @@ def build_dashboard(state, controller):
             # ── Left column: config + controls (fixed 360px, scrollable) ──
             with ui.column().classes('w-[360px] min-w-[360px] h-full overflow-y-auto p-3 gap-2 border-r border-[#262629]'):
                 cfg_card, get_form_values = config_panel()
-                calib = calibration_panel(controller)
 
                 ui.separator()
                 with ui.row().classes('w-full gap-2'):
@@ -67,12 +66,14 @@ def build_dashboard(state, controller):
                                 kin_turn = ui.label('ω: —').classes('mono text-[10px] text-zinc-300')
                                 kin_disp = ui.label('D: —').classes('mono text-[10px] text-zinc-300')
 
-                # Hardware state + Verdict table (side by side)
+                # Hardware state + Verdict table + Calibration (three columns)
                 with ui.row().classes('w-full gap-2'):
                     hw = hw_status_panel(state)
                     hw.classes('flex-grow')
                     verd = verdict_table(state)
                     verd.classes('flex-grow')
+                    calib = calibration_panel(controller)
+                    calib.classes('w-[280px]')
 
     # ── Per-client UI sync (reads shared state, no queue polling) ──
     def tick():
@@ -109,11 +110,18 @@ def build_dashboard(state, controller):
 
     # Trajectory + twin update at lower rate (50ms ≈ 20Hz)
     async def visual_tick():
-        if hasattr(traj_container, '_traj_update'):
-            await traj_container._traj_update()
-        await update_twin(twin_container, state.ui_twin)
+        try:
+            if hasattr(traj_container, '_traj_update'):
+                await traj_container._traj_update()
+            await update_twin(twin_container, state.ui_twin)
+        except TimeoutError:
+            pass  # Page disconnected, ignore
 
-    ui.timer(0.05, visual_tick)
+    visual_timer = ui.timer(0.05, visual_tick)
+
+    # Cancel timers on disconnect to prevent errors on window close
+    from nicegui import context
+    context.client.on_disconnect(lambda: visual_timer.cancel())
 
 
 def _start(controller, get_form_values, state, start_btn, stop_btn):
