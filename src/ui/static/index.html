@@ -418,12 +418,19 @@ function renderTwin(cfg){
   }
 }
 
+let lastTrajSig = '';
 function renderTraj(traj){
+  const pts = traj && traj.trail_points ? traj.trail_points : [];
+  const angle = traj ? traj.angle : 0;
+  // dirty guard: skip redraw if data unchanged (prevents 60fps jelly effect)
+  const last = pts.length ? pts[pts.length-1] : [0,0];
+  const sig = pts.length + '|' + last[0] + '|' + last[1] + '|' + angle;
+  if (sig === lastTrajSig){ updateKin(traj); return; }
+  lastTrajSig = sig;
   const ctx = el.traj.getContext('2d');
   const { dpr, sx, sy } = sizeCanvas(el.traj, 150, 150);
   ctx.setTransform(dpr*sx, 0, 0, dpr*sy, 0, 0);
   ctx.fillStyle='#000'; ctx.fillRect(0,0,150,150);
-  const pts = traj && traj.trail_points ? traj.trail_points : [];
   let dec = pts;
   if (pts.length > 200){ const step=Math.ceil(pts.length/200); dec = pts.filter((_,i)=> i%step===0); }
   if (dec.length < 2){ updateKin(traj); return; }
