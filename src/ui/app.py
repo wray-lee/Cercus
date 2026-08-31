@@ -63,20 +63,27 @@ def main():
 
     @ui.page('/')
     def root_page():
-        # Native window opens root — redirect to dashboard with token
-        ui.navigate.to(f'/dashboard?token={DASHBOARD_TOKEN}')
+        from starlette.requests import Request
+        request = ui.context.client.request
+        # Native window (pywebview) connects from localhost — allow dashboard
+        host = request.client.host if request.client else ''
+        if host in ('127.0.0.1', '::1', 'localhost'):
+            ui.navigate.to(f'/dashboard?token={DASHBOARD_TOKEN}')
+        else:
+            # Remote users get the read-only monitor
+            ui.navigate.to('/monitor')
 
     # Single global timer for telemetry polling (62.5 Hz)
     # Must use app.timer (not ui.timer) so it runs globally, not per-client
     app.on_startup(lambda: app.timer(0.016, _global_poll))
 
     print(f'Dashboard token: {DASHBOARD_TOKEN}')
-    print(f'Monitor available at: http://<host>:8080/monitor')
+    print(f'Monitor available at: http://<host>:8000/monitor')
 
     ui.run(
         native=True,
         host='0.0.0.0',
-        port=8080,
+        port=8000,
         title='Cercus',
         window_size=(1400, 900),
         reload=False,
