@@ -1,17 +1,12 @@
 """NiceGUI application entry point.
 
-Run with: python -m src.ui.app
+Run with: python main.py
 """
 import multiprocessing as mp
 import secrets
 
-from nicegui import ui, app
-
 from src.ui.controller import ExperimentController
 from src.ui.state import AppState
-from src.ui.theme import apply_theme
-from src.ui.pages.dashboard import build_dashboard
-from src.ui.pages.monitor import build_monitor
 
 # ── Shared state (single process, all clients see the same) ──
 controller = ExperimentController()
@@ -22,10 +17,7 @@ DASHBOARD_TOKEN = secrets.token_urlsafe(32)
 
 
 def _global_poll():
-    """Single global polling loop — drains mp.Queue once, updates shared state.
-
-    Per-client timers would race on the same queue, splitting frames.
-    """
+    """Single global polling loop — drains mp.Queue once, updates shared state."""
     events = controller.poll_telemetry()
     state.apply(events)
     if state.worker_died:
@@ -36,30 +28,34 @@ def _global_poll():
         controller.cleanup_worker()
 
 
-@ui.page('/dashboard')
-def dashboard_page(token: str = ''):
-    if token != DASHBOARD_TOKEN:
-        ui.label('Access denied').classes('text-red-500 text-2xl p-8')
-        return
-    build_dashboard(state, controller)
-
-
-@ui.page('/monitor')
-def monitor_page():
-    build_monitor(state, controller)
-
-
-@ui.page('/')
-def root_page():
-    ui.navigate.to('/monitor')
-
-
 def main():
     mp.set_start_method('spawn', force=True)
+
+    # Lazy import nicegui to avoid import-time side effects in worker spawns
+    from nicegui import ui, app
+    from src.ui.theme import apply_theme
+    from src.ui.pages.dashboard import build_dashboard
+    from src.ui.pages.monitor import build_monitor
+
     apply_theme()
 
     # Auto-load calibration matrix if available
     controller.load_calibration_matrix()
+
+    @ui.page('/dashboard')
+    def dashboard_page(token: str = ''):
+        if token != DASHBOARD_TOKEN:
+            ui.label('Access denied').classes('text-red-500 text-2xl p-8')
+            return
+        build_dashboard(state, controller)
+
+    @ui.page('/monitor')
+    def monitor_page():
+        build_monitor(state, controller)
+
+    @ui.page('/')
+    def root_page():
+        ui.navigate.to('/monitor')
 
     # Single global timer for telemetry polling (62.5 Hz)
     app.on_startup(lambda: ui.timer(0.016, _global_poll))
