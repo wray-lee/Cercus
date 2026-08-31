@@ -47,33 +47,37 @@ def build_dashboard(state, controller):
                     worker_badge = ui.label('IDLE').classes('mono text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-zinc-700 text-zinc-400')
                     status_label = ui.label('Ready').classes('text-[10px] text-zinc-400 ml-auto')
 
-                # Visuals row: stimulus + trajectory + kinematic readouts
-                with ui.row().classes('w-full gap-2'):
-                    # Twin preview (compact)
-                    with ui.card().classes('flex-grow'):
+                # Responsive grid: stimulus + trajectory side by side
+                with ui.element('div').classes('w-full').style(
+                    'display: grid; '
+                    'grid-template-columns: 1fr minmax(200px, 280px); '
+                    'gap: 8px;'
+                ):
+                    # Twin preview
+                    with ui.card().classes('min-w-0'):
                         ui.label('Stimulus').classes('text-xs font-semibold text-zinc-300 mb-1')
                         twin_container = twin_preview_canvas()
-                        twin_container.style('max-height: 180px')
 
-                    # Trajectory + kinematic (compact)
-                    with ui.card().classes('w-[280px]'):
+                    # Trajectory + kinematic
+                    with ui.card().classes('min-w-0'):
                         ui.label('Trajectory').classes('text-xs font-semibold text-zinc-300 mb-1')
                         with ui.row().classes('w-full gap-2'):
                             traj_container = trajectory_canvas(state)
-                            traj_container.classes('w-[140px] h-[140px]')
+                            traj_container.classes('flex-grow').style('max-width: 160px; aspect-ratio: 1;')
                             with ui.column().classes('gap-0.5 justify-center'):
                                 kin_angle = ui.label('θ: —').classes('mono text-[10px] text-zinc-300')
                                 kin_turn = ui.label('ω: —').classes('mono text-[10px] text-zinc-300')
                                 kin_disp = ui.label('D: —').classes('mono text-[10px] text-zinc-300')
 
-                # Hardware state + Verdict table + Calibration (three columns)
-                with ui.row().classes('w-full gap-2'):
+                # Responsive grid: hardware + verdicts + calibration
+                with ui.element('div').classes('w-full').style(
+                    'display: grid; '
+                    'grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); '
+                    'gap: 8px;'
+                ):
                     hw = hw_status_panel(state)
-                    hw.classes('flex-grow')
                     verd = verdict_table(state)
-                    verd.classes('flex-grow')
                     calib = calibration_panel(controller)
-                    calib.classes('w-[280px]')
 
     # ── Per-client UI sync (reads shared state, no queue polling) ──
     def tick():

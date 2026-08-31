@@ -21,6 +21,14 @@ class CoreRenderer:
         self.objects: Dict[str, Any] = {}
         self.visual = visual
 
+        # Auto-focus the PsychoPy window (replicate v1.0.0 behaviour where
+        # the stimulus window grabbed focus so SPACE was immediately captured)
+        try:
+            if hasattr(self.win, 'winHandle') and hasattr(self.win.winHandle, 'activate'):
+                self.win.winHandle.activate()
+        except Exception:
+            pass
+
     _TYPE_MAP: Dict[str, str] = {
         "circle": "Circle",
         "rect": "Rect",

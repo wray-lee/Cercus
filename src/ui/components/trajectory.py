@@ -9,7 +9,8 @@ _JS_INJECTED = set()  # track per-client injection
 
 def trajectory_canvas(state) -> ui.element:
     """Create a trajectory canvas element bound to AppState."""
-    container = ui.element('div').classes('w-full aspect-square bg-black rounded-lg overflow-hidden')
+    container = ui.element('div').classes('bg-black rounded-lg overflow-hidden min-w-0')
+    container.style('aspect-ratio: 1; min-height: 80px;')
     canvas_id = f'traj-{id(container)}'
 
     # Inject JS once per page render (inside page function, not global scope)

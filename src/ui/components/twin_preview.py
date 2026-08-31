@@ -15,8 +15,8 @@ def twin_preview_canvas() -> ui.element:
         _JS_INJECTED = True
 
     canvas_id = f'twin-{id(object())}'
-    container = ui.element('div').classes('w-full bg-black rounded-lg overflow-hidden')
-    container.style('aspect-ratio: 400/150')
+    container = ui.element('div').classes('w-full bg-black rounded-lg overflow-hidden min-w-0')
+    container.style('aspect-ratio: 8/3; min-height: 100px;')
     with container:
         ui.html(f'<canvas id="{canvas_id}" style="width:100%;height:100%"></canvas>')
     container._twin_canvas_id = canvas_id
