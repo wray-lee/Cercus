@@ -556,10 +556,10 @@ class MasterDashboard:
         # Trajectory panel state
         self._trail_points: List[tuple] = []
         self._trail_last_phase: str = ""
-        self._trail_min_x: float = None  # None = no points yet
-        self._trail_max_x: float = None
-        self._trail_min_y: float = None
-        self._trail_max_y: float = None
+        self._trail_min_x: Optional[float] = None  # None = no points yet
+        self._trail_max_x: Optional[float] = None
+        self._trail_min_y: Optional[float] = None
+        self._trail_max_y: Optional[float] = None
         self._trail_last_angle: float = 0.0
 
         # Verdict history (current session)
