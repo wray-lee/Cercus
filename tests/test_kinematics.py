@@ -163,5 +163,14 @@ def test_effective_speed_falls_back_to_move_speed():
 def test_quiet_speed_threshold_is_class_constant():
     """QUIET_SPEED_THRESHOLD is accessible and used by stationary trigger."""
     assert hasattr(KinematicEngine, 'QUIET_SPEED_THRESHOLD')
-    assert KinematicEngine.QUIET_SPEED_THRESHOLD == 15.0
+    assert KinematicEngine.QUIET_SPEED_THRESHOLD == 10.0
+
+
+def test_quiet_speed_threshold_used_in_update_method():
+    """Verify QUIET_SPEED_THRESHOLD is used in update() stationary tracking, not hardcoded."""
+    import inspect
+    source = inspect.getsource(KinematicEngine.update)
+    # Should NOT contain hardcoded 15.0 (only QUIET_SPEED_THRESHOLD)
+    assert "15.0" not in source, "update() contains hardcoded 15.0 instead of QUIET_SPEED_THRESHOLD"
+    assert "QUIET_SPEED_THRESHOLD" in source or "_speed_threshold_active" in source
 

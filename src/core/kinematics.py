@@ -13,7 +13,7 @@ class KinematicEngine:
 
     # Default quiet-speed threshold (units/sec) for stationary trigger detection.
     # Paradigms may override via evaluate_trigger's quiet_threshold parameter.
-    QUIET_SPEED_THRESHOLD: float = 15.0
+    QUIET_SPEED_THRESHOLD: float = 10.0
 
     # Pre-allocated slot names (documented for clarity; all are plain floats)
     __slots__ = (
@@ -225,7 +225,7 @@ class KinematicEngine:
         if self._speed_threshold_active >= 0.0:
             if self._speed_threshold_active == 0.0:
                 # stationary trigger: any movement resets the timer
-                if self._move_speed > 15.0:
+                if self._move_speed > self.QUIET_SPEED_THRESHOLD:
                     self._speed_above_since = -1.0
                 elif self._speed_above_since < 0.0:
                     self._speed_above_since = t
