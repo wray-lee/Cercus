@@ -1,12 +1,6 @@
 """NiceGUI application entry point.
 
 Run with: python main.py
-
-NiceGUI script mode detects any UI element created at module/global scope.
-If ui.page decorators are also present, it raises RuntimeError. Therefore:
-- All ui.page definitions go inside main()
-- No UI calls (ui.add_css, ui.dark_mode, etc.) at global scope
-- Theme is applied per-page inside build_dashboard / build_monitor
 """
 import multiprocessing as mp
 import secrets
@@ -57,7 +51,8 @@ def main():
 
     @ui.page('/')
     def root_page():
-        ui.navigate.to('/monitor')
+        # Native window opens root — redirect to dashboard with token
+        ui.navigate.to(f'/dashboard?token={DASHBOARD_TOKEN}')
 
     # Single global timer for telemetry polling (62.5 Hz)
     app.on_startup(lambda: ui.timer(0.016, _global_poll))
@@ -67,7 +62,6 @@ def main():
 
     ui.run(
         native=True,
-        native_url=f'/dashboard?token={DASHBOARD_TOKEN}',
         host='0.0.0.0',
         port=8080,
         title='Cercus · Experiment Dashboard',
