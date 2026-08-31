@@ -4,26 +4,22 @@ from nicegui import ui
 
 
 def calibration_panel(controller) -> ui.element:
-    """Compact calibration panel showing the 3x3 matrix."""
+    """Compact calibration panel showing the 3x3 matrix (auto-loaded)."""
     with ui.card().classes('w-full') as panel:
         ui.label('Calibration').classes('text-xs font-semibold text-zinc-300 mb-1')
         matrix_grid = ui.element('div').classes(
             'grid grid-cols-3 gap-1 font-mono text-[10px] text-center'
         )
-        status_label = ui.label('No matrix loaded').classes('text-[10px] text-zinc-500 mt-1')
-
-        with ui.row().classes('gap-1 mt-1'):
-            ui.button('Load', on_click=lambda: _load(controller, matrix_grid, status_label)).props('dense size=sm').classes('text-[10px]')
-            ui.button('Apply', on_click=lambda: _apply(controller, status_label)).props('dense size=sm').classes('text-[10px]')
+        status_label = ui.label('').classes('text-[9px] text-zinc-500 mt-0.5')
 
     def refresh():
         _render_matrix(matrix_grid, controller.calib_matrix)
         if controller.calib_matrix:
-            status_label.text = 'Matrix loaded'
-            status_label.classes(replace='text-xs text-lime-400 mt-1')
+            status_label.text = '✓ Loaded'
+            status_label.classes(replace='text-[9px] text-lime-400 mt-0.5')
         else:
-            status_label.text = 'No matrix loaded'
-            status_label.classes(replace='text-xs text-zinc-500 mt-1')
+            status_label.text = 'No matrix'
+            status_label.classes(replace='text-[9px] text-zinc-500 mt-0.5')
 
     panel._calib_refresh = refresh
     # Initial load attempt
@@ -59,23 +55,3 @@ def _render_matrix(grid, matrix):
             for val in row:
                 v = f'{val:.3f}' if isinstance(val, (int, float)) else str(val)
                 ui.label(v).classes('bg-[#0E0E11] rounded px-1 py-0.5 text-[10px] text-zinc-200')
-
-
-def _load(controller, grid, status):
-    result = controller.load_calibration_matrix()
-    if result:
-        _render_matrix(grid, result)
-        status.text = 'Matrix loaded'
-        status.classes(replace='text-xs text-lime-400 mt-1')
-    else:
-        status.text = 'Failed to load calibration_cfg.json'
-        status.classes(replace='text-xs text-red-400 mt-1')
-
-
-def _apply(controller, status):
-    if controller.calib_matrix:
-        status.text = 'Matrix applied (will inject into next experiment)'
-        status.classes(replace='text-xs text-cyan-400 mt-1')
-    else:
-        status.text = 'No matrix to apply'
-        status.classes(replace='text-xs text-red-400 mt-1')
