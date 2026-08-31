@@ -556,10 +556,10 @@ class MasterDashboard:
         # Trajectory panel state
         self._trail_points: List[tuple] = []
         self._trail_last_phase: str = ""
-        self._trail_min_x: float = 0.0
-        self._trail_max_x: float = 0.0
-        self._trail_min_y: float = 0.0
-        self._trail_max_y: float = 0.0
+        self._trail_min_x: float = None  # None = no points yet
+        self._trail_max_x: float = None
+        self._trail_min_y: float = None
+        self._trail_max_y: float = None
         self._trail_last_angle: float = 0.0
 
         # Verdict history (current session)
@@ -1940,8 +1940,27 @@ class MasterDashboard:
 
         px = ui_metrics.get("pos_x")
         py = ui_metrics.get("pos_y")
+
+        # Update angle BEFORE draw so arrow is current-frame, not lagged
+        try:
+            self._trail_last_angle = float(ui_metrics.get('k_angle', 0.0))
+        except (ValueError, TypeError):
+            self._trail_last_angle = 0.0
+
+        # Always update kinematic labels even if pos is bad
+        self._lbl_kin_angle.configure(text=f"θ: {ui_metrics.get('k_angle', '—')}")
+        self._lbl_kin_turn.configure(text=f"ω: {ui_metrics.get('k_turn_speed', '—')}")
+        self._lbl_kin_disp.configure(text=f"D: {ui_metrics.get('k_disp', '—')}")
+
         if px is not None and py is not None:
-            new_pt = (float(px), float(py))
+            try:
+                fpx, fpy = float(px), float(py)
+            except (ValueError, TypeError):
+                fpx, fpy = None, None
+            # ponytail: guard NaN/inf — poisons min/max and kills poll loop
+            if fpx is None or fpy is None or not (math.isfinite(fpx) and math.isfinite(fpy)):
+                return
+            new_pt = (fpx, fpy)
             # Distance gate — a single glitchy point far from the previous one
             # must not produce a line that shoots off-screen. Drop the sample
             # and restart the trail instead of connecting to the outlier.
@@ -1952,22 +1971,18 @@ class MasterDashboard:
                     return  # discard the outlier point
             self._trail_points.append(new_pt)
             self._trail_points = self._trail_points[-1000:]
-            # Recompute the bounding box from the (possibly truncated) trail —
-            # incremental min/max goes stale once extreme points fall off the
-            # window, which would leave the plot incorrectly zoomed out.
-            self._trail_min_x = min(p[0] for p in self._trail_points)
-            self._trail_max_x = max(p[0] for p in self._trail_points)
-            self._trail_min_y = min(p[1] for p in self._trail_points)
-            self._trail_max_y = max(p[1] for p in self._trail_points)
+            # ponytail: monotonic bbox — only expands outward so scale never
+            # jumps inward when extreme points fall off the 1000-pt window.
+            # None sentinel = first point after reset seeds the bbox.
+            if self._trail_min_x is None:
+                self._trail_min_x = self._trail_max_x = fpx
+                self._trail_min_y = self._trail_max_y = fpy
+            else:
+                self._trail_min_x = min(self._trail_min_x, fpx)
+                self._trail_max_x = max(self._trail_max_x, fpx)
+                self._trail_min_y = min(self._trail_min_y, fpy)
+                self._trail_max_y = max(self._trail_max_y, fpy)
             self._draw_trajectory()
-
-        try:
-            self._trail_last_angle = float(ui_metrics.get('k_angle', 0.0))
-        except (ValueError, TypeError):
-            self._trail_last_angle = 0.0
-        self._lbl_kin_angle.configure(text=f"θ: {ui_metrics.get('k_angle', '—')}")
-        self._lbl_kin_turn.configure(text=f"ω: {ui_metrics.get('k_turn_speed', '—')}")
-        self._lbl_kin_disp.configure(text=f"D: {ui_metrics.get('k_disp', '—')}")
 
     def _draw_trajectory(self):
         canvas = self._traj_canvas
@@ -2055,10 +2070,10 @@ class MasterDashboard:
     def _reset_trajectory(self):
         self._trail_points = []
         self._trail_last_phase = ""
-        self._trail_min_x = 0.0
-        self._trail_max_x = 0.0
-        self._trail_min_y = 0.0
-        self._trail_max_y = 0.0
+        self._trail_min_x = None
+        self._trail_max_x = None
+        self._trail_min_y = None
+        self._trail_max_y = None
         self._trail_last_angle = 0.0
         self._traj_canvas.delete("all")
         self._lbl_kin_angle.configure(text="θ: —")
