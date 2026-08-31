@@ -85,6 +85,7 @@ def config_panel(on_paradigm_change=None) -> tuple:
         _refs['param_widgets'] = {}
         schema = p_cls.get_parameter_schema()
         with param_container:
+            # Render paradigm-specific parameters
             for key, meta in schema.items():
                 p_type = meta.get('type', 'string')
                 label = meta.get('label', key)
@@ -108,8 +109,41 @@ def config_panel(on_paradigm_change=None) -> tuple:
                     w = ui.input(label, value=str(default)).props('dense outlined').classes('w-full')
                     _refs['param_widgets'][key] = w
 
+            # Conditionally add kinematic trigger parameters (framework-level)
+            exec_mode_widget = _refs['param_widgets'].get('Execution Mode')
+            if exec_mode_widget and exec_mode_widget.value == 'Kinematic':
+                ui.separator().classes('my-2')
+                ui.label('Kinematic Trigger').classes('text-xs font-semibold text-zinc-400 mb-1')
+
+                # Trigger parameters with enable checkboxes
+                trigger_params = [
+                    ('Trigger Dist (mm)', 5.0),
+                    ('Trigger Angle (°)', 10.0),
+                    ('Trigger Speed (units/s)', 0.0),
+                ]
+
+                for key, default in trigger_params:
+                    with ui.row().classes('w-full items-center gap-1'):
+                        w = ui.number(key, value=default).props('dense outlined').classes('flex-grow')
+                        w.enabled = (key == 'Trigger Speed (units/s)')  # Speed enabled by default
+                        _refs['param_widgets'][key] = w
+
+                        # Enable checkbox
+                        en_key = f'{key} Enabled'
+                        cb = ui.checkbox('', value=w.enabled).props('dense')
+                        cb.on_value_change(lambda e, widget=w: _toggle_trigger(widget, e.value))
+                        _refs['param_widgets'][en_key] = cb
+
+        # Re-bind execution mode change handler
+        exec_mode_widget = _refs['param_widgets'].get('Execution Mode')
+        if exec_mode_widget:
+            exec_mode_widget.on_value_change(lambda e: rebuild_params())
+
         if on_paradigm_change:
             on_paradigm_change(p_name)
+
+    def _toggle_trigger(widget, enabled):
+        widget.enabled = enabled
 
     paradigm_select.on_value_change(lambda e: rebuild_params(e.value))
     # Initial build
