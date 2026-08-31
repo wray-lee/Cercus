@@ -909,7 +909,7 @@ class MasterDashboard:
         self._param_frame.grid(
             row=8, column=0, columnspan=4, sticky="nsew", padx=10, pady=(5, 10)
         )
-        cfg_frame.grid_rowconfigure(8, weight=1)
+        cfg_frame.grid_rowconfigure(8, weight=1, minsize=120)
         cfg_frame.grid_columnconfigure(4, weight=1)
 
         # --- Right: Calibration Panel ---
@@ -943,10 +943,21 @@ class MasterDashboard:
         )
         self.lbl_sess_val = self._add_metric_row(metrics_frame, "Session:", 1)
         self.lbl_trial_val = self._add_metric_row(metrics_frame, "Trial Progress:", 2)
-        self.lbl_hw_val = self._add_metric_row(
-            metrics_frame, "Hardware State:", 3, color="cyan"
+
+        ctk.CTkLabel(
+            metrics_frame,
+            text="Hardware State:",
+            text_color=("gray35", "gray70"),
+            font=("Segoe UI", 14),
+        ).grid(row=3, column=0, sticky="nw", pady=4, padx=(0, 10))
+        self.hw_textbox = ctk.CTkTextbox(
+            metrics_frame, width=260, height=80,
+            font=("Consolas", 12), text_color="cyan",
+            fg_color="transparent", border_width=0,
+            activate_scrollbars=True, wrap="none",
         )
-        self.lbl_hw_val.configure(justify="left")
+        self.hw_textbox.grid(row=3, column=1, sticky="w", pady=4)
+        self.hw_textbox.configure(state="disabled")
 
         twin_frame = ctk.CTkFrame(status_frame, fg_color="transparent")
         twin_frame.grid(row=0, column=1, sticky="e", padx=20, pady=15)
@@ -1842,7 +1853,10 @@ class MasterDashboard:
             if ui_metrics
             else "Active"
         )
-        self.lbl_hw_val.configure(text=hw_str, text_color="cyan")
+        self.hw_textbox.configure(state="normal")
+        self.hw_textbox.delete("1.0", "end")
+        self.hw_textbox.insert("1.0", hw_str)
+        self.hw_textbox.configure(state="disabled")
 
         # Trajectory panel — always active
         self._update_trajectory(data, ui_metrics)
@@ -2112,7 +2126,10 @@ class MasterDashboard:
         self._last_ui_twin = None
 
         self.lbl_phase_val.configure(text="IDLE", text_color="gray")
-        self.lbl_hw_val.configure(text="Disconnected", text_color="gray")
+        self.hw_textbox.configure(state="normal")
+        self.hw_textbox.delete("1.0", "end")
+        self.hw_textbox.insert("1.0", "Disconnected")
+        self.hw_textbox.configure(state="disabled")
         self.canvas.delete("all")
         self._reset_trajectory()
         self._clear_verdict_table()
