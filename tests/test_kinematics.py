@@ -108,3 +108,38 @@ def test_duration_speed_trigger():
 def test_no_trigger_when_all_disabled():
     eng = _make_engine()
     assert eng.evaluate_trigger(0.0, 0.0) is False
+
+
+def test_peak_move_speed_tracking():
+    """peak_move_speed must track the max move_speed reached even if speed drops later."""
+    eng = _make_engine()
+    assert hasattr(eng, "peak_move_speed")
+    assert eng.peak_move_speed == 0.0
+
+    # Step 1: baseline
+    eng.update(0.0, 0.0, 0.0, 0.0)
+    # Step 2: high speed movement (dx=10mm over 10ms = 1000 mm/s)
+    eng.update(0.010, 10.0, 0.0, 0.0)
+    high_peak = eng.peak_move_speed
+    assert high_peak > 0.0
+
+    # Step 3: slow movement (dx=1mm over 10ms = 100 mm/s)
+    eng.update(0.020, 1.0, 0.0, 0.0)
+    assert eng.move_speed < high_peak
+    # peak_move_speed must stay at high_peak
+    assert eng.peak_move_speed == high_peak
+
+    # Reset clears peak_move_speed
+    eng.reset()
+    assert eng.peak_move_speed == 0.0
+
+
+def test_buf_dt_5ms_threshold():
+    """Speed calculations should update when accumulated dt >= 5ms (0.005s)."""
+    eng = _make_engine()
+    eng.update(0.0, 0.0, 0.0, 0.0)
+    # 10ms step (> 5ms but < 30ms)
+    eng.update(0.010, 10.0, 0.0, 0.0)
+    # Speed should be calculated (non-zero move_speed)
+    assert eng.move_speed > 0.0
+

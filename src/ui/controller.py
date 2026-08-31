@@ -4,6 +4,7 @@ Pure Python, no UI framework dependency.  Extracted from MasterDashboard.
 """
 import json
 import logging
+import math
 import multiprocessing as mp
 import os
 import queue
@@ -31,10 +32,19 @@ def _safe_int(val, default: int) -> int:
         return default
 
 
-def _safe_float(val: str, default: float) -> float:
+def _safe_float(val, default: float) -> float:
+    if isinstance(val, bool):
+        return default
+    if isinstance(val, (int, float)):
+        try:
+            res = float(val)
+            return default if (math.isnan(res) or math.isinf(res)) else res
+        except (ValueError, OverflowError):
+            return default
     try:
-        return float(val)
-    except (ValueError, TypeError):
+        res = float(val.strip())
+        return default if (math.isnan(res) or math.isinf(res)) else res
+    except (AttributeError, ValueError, TypeError):
         return default
 
 
@@ -62,10 +72,16 @@ def _coerce_params(
             continue
 
         default = meta.get("default", 0)
+        def_val = 0.0 if default is None else default
         try:
             num = float(val)
+            if math.isnan(num) or math.isinf(num):
+                num = float(def_val)
         except (TypeError, ValueError):
-            num = float(default)
+            num = float(def_val)
+
+        if math.isnan(num) or math.isinf(num):
+            num = 0.0
 
         lo, hi = meta.get("min"), meta.get("max")
         if lo is not None:

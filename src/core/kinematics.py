@@ -19,6 +19,7 @@ class KinematicEngine:
         "_cum_disp",
         "_turn_speed",
         "_move_speed",
+        "_peak_move_speed",
         "_ready",
         # 2-D position tracking
         "_pos_x",
@@ -44,6 +45,7 @@ class KinematicEngine:
         self._cum_disp = 0.0
         self._turn_speed = 0.0
         self._move_speed = 0.0
+        self._peak_move_speed = 0.0
         self._pos_x = 0.0
         self._pos_y = 0.0
         self._ready = False
@@ -77,6 +79,11 @@ class KinematicEngine:
         return self._move_speed
 
     @property
+    def peak_move_speed(self) -> float:
+        """Peak movement speed reached during trial (units/sec)."""
+        return self._peak_move_speed
+
+    @property
     def cum_disp(self) -> float:
         """Cumulative displacement during ready phase (same units as dx/dy)."""
         return self._cum_disp
@@ -102,6 +109,7 @@ class KinematicEngine:
         self._cum_disp = 0.0
         self._turn_speed = 0.0
         self._move_speed = 0.0
+        self._peak_move_speed = 0.0
         self._pos_x = 0.0
         self._pos_y = 0.0
         self._ready = True
@@ -185,7 +193,7 @@ class KinematicEngine:
         self._buf_dy += dy
         self._buf_dz += dz
 
-        if self._buf_dt < 0.030:
+        if self._buf_dt < 0.005:
             return
 
         # use buffered values for speed calculation
@@ -199,6 +207,8 @@ class KinematicEngine:
         # instantaneous movement speed: sqrt(dx^2 + dy^2) / dt
         step_dist = math.sqrt(self._buf_dx * self._buf_dx + self._buf_dy * self._buf_dy)
         self._move_speed = step_dist / bdt
+        if self._move_speed > self._peak_move_speed:
+            self._peak_move_speed = self._move_speed
         self._buf_dx = 0.0
         self._buf_dy = 0.0
 

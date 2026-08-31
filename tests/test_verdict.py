@@ -74,3 +74,12 @@ def test_base_paradigm_default_works_on_any_paradigm():
     result = paradigm.classify_response(eng, {"type": "blank_tracking"}, 10.0)
     assert result["response"] == "escape"
     assert set(result.keys()) == {"response", "cum_disp", "cum_dz", "peak_speed"}
+
+
+def test_peak_move_speed_used_in_verdict():
+    """classify_response uses peak_move_speed over move_speed when peak_move_speed > 0."""
+    eng = _make_engine(cum_disp=0.0, cum_dz=0.0, move_speed=0.0, peak_move_speed=120.0)
+    paradigm = LoomingParadigm(debug_mode=True)
+    result = paradigm.classify_response(eng, {"screen_side": "left"}, 8.0)
+    assert result["peak_speed"] == 120.0
+

@@ -39,6 +39,7 @@ class GroundTruthLogger:
         self._event_writer = None
         self._kinematics_file = None
         self._kinematics_writer = None
+        self._session_open = False
 
         # Async I/O: dedicated writer thread with queue
         self._io_queue: queue.Queue = queue.Queue()
@@ -60,6 +61,24 @@ class GroundTruthLogger:
     # Writer daemon – consumes all disk-I/O commands off the main thread
     # ------------------------------------------------------------------
 
+    def _do_close(self):
+        if self._event_file:
+            try:
+                self._event_file.flush()
+                os.fsync(self._event_file.fileno())
+                self._event_file.close()
+            except Exception:
+                pass
+            self._event_file, self._event_writer = None, None
+        if self._kinematics_file:
+            try:
+                self._kinematics_file.flush()
+                os.fsync(self._kinematics_file.fileno())
+                self._kinematics_file.close()
+            except Exception:
+                pass
+            self._kinematics_file, self._kinematics_writer = None, None
+
     def _io_loop(self):
         while True:
             item = self._io_queue.get()
@@ -67,7 +86,31 @@ class GroundTruthLogger:
                 break
             action, payload = item
             try:
-                if action == "event_row":
+                if action == "open_session":
+                    self._do_close()
+                    subject_id, session_num, kin_headers = payload
+                    base_name = f"{subject_id}_session_{session_num}"
+
+                    event_path = os.path.join(self.out, f"{base_name}_events.csv")
+                    event_exists = os.path.exists(event_path) and os.path.getsize(event_path) > 0
+                    self._event_file = open(event_path, "a", newline="", encoding="utf-8-sig")
+                    self._event_writer = csv.writer(self._event_file)
+                    if not event_exists:
+                        self._event_writer.writerow(self.EVENT_COLUMNS)
+
+                    kinematics_path = os.path.join(self.out, f"{base_name}_kinematics.csv")
+                    kin_exists = os.path.exists(kinematics_path) and os.path.getsize(kinematics_path) > 0
+                    self._kinematics_file = open(
+                        kinematics_path, "a", newline="", encoding="utf-8-sig"
+                    )
+                    self._kinematics_writer = csv.writer(self._kinematics_file)
+                    if not kin_exists:
+                        self._kinematics_writer.writerow(kin_headers)
+                elif action == "close":
+                    self._do_close()
+                    if payload:
+                        payload.set()
+                elif action == "event_row":
                     if self._event_writer:
                         # payload: (event_name, ts, session, trial, gid, details_dict)
                         # json.dumps 在后台线程执行，不阻塞渲染主线程
@@ -99,44 +142,21 @@ class GroundTruthLogger:
     # ------------------------------------------------------------------
 
     def open_session(self, subject_id: str, session_num: int, kin_headers: list):
-        self.close()
         self.session_num = session_num
         self.trial_in_session = 0
-        base_name = f"{subject_id}_session_{session_num}"
-
-        event_path = os.path.join(self.out, f"{base_name}_events.csv")
-        event_exists = os.path.exists(event_path) and os.path.getsize(event_path) > 0
-        self._event_file = open(event_path, "a", newline="", encoding="utf-8-sig")
-        self._event_writer = csv.writer(self._event_file)
-        if not event_exists:
-            self._event_writer.writerow(self.EVENT_COLUMNS)
-
-        kinematics_path = os.path.join(self.out, f"{base_name}_kinematics.csv")
-        kin_exists = os.path.exists(kinematics_path) and os.path.getsize(kinematics_path) > 0
-        self._kinematics_file = open(
-            kinematics_path, "a", newline="", encoding="utf-8-sig"
-        )
-        self._kinematics_writer = csv.writer(self._kinematics_file)
-        if not kin_exists:
-            self._kinematics_writer.writerow(kin_headers)
+        self._session_open = True
+        self._io_queue.put(("open_session", (subject_id, session_num, kin_headers)))
 
     def is_open(self) -> bool:
-        return self._event_writer is not None and self._kinematics_writer is not None
+        return self._session_open
 
     def close(self):
         """Flush pending writes and close current session files (thread stays alive)."""
-        if self._event_writer or self._kinematics_writer:
-            self._io_queue.put(("flush_kin", None))
-            self._io_queue.put(("flush_event", None))
+        if self._session_open:
+            self._session_open = False
             done = threading.Event()
-            self._io_queue.put(("flush_sync", done))
+            self._io_queue.put(("close", done))
             done.wait()
-        if self._event_file:
-            self._event_file.close()
-            self._event_file, self._event_writer = None, None
-        if self._kinematics_file:
-            self._kinematics_file.close()
-            self._kinematics_file, self._kinematics_writer = None, None
 
     def shutdown(self):
         """Final shutdown: flush everything, stop writer thread, close files."""
@@ -151,7 +171,7 @@ class GroundTruthLogger:
 
     def log_event(self, event_name: str, timestamp: float, **details):
         """Enqueue an event row.  Serialization is deferred to the I/O thread."""
-        if not self._event_writer:
+        if not self._session_open:
             return
         # 主线程仅打包原始数据，不做 json.dumps；序列化在 _io_loop 后台完成
         self._io_queue.put(("event_row", (
@@ -164,7 +184,7 @@ class GroundTruthLogger:
         )))
 
     def log_kinematics_batch(self, items: List[list]):
-        if not self._kinematics_writer:
+        if not self._session_open:
             return
         self._io_queue.put(("kin_rows", items))
 

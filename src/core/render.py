@@ -135,7 +135,7 @@ class CoreRenderer:
                 # NumPy arrays produce element-wise != → wrap in tuple for safe caching
                 pos_val = tuple(cmd["pos"]) if hasattr(cmd["pos"], '__iter__') else cmd["pos"]
                 if obj._state_cache.get("pos") != pos_val:
-                    obj.pos = cmd["pos"]
+                    obj.pos = pos_val
                     obj._state_cache["pos"] = pos_val
 
             if "width" in cmd and "height" in cmd:

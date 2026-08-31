@@ -174,15 +174,15 @@ def _start(controller, get_form_values, state, start_btn, stop_btn, btn_state):
     from src.ui.controller import ExperimentController
     import logging
     log = logging.getLogger(__name__)
-    form = get_form_values()
-    config = ExperimentController.build_config(form)
-    if controller.calib_matrix:
-        config['calib_matrix'] = controller.calib_matrix
-    state.reset()
-    state.status_text = 'Running...'
-    state.worker_status = 'running'
-    state.config_snapshot = config
     try:
+        form = get_form_values()
+        config = ExperimentController.build_config(form)
+        if controller.calib_matrix:
+            config['calib_matrix'] = controller.calib_matrix
+        state.reset()
+        state.status_text = 'Running...'
+        state.worker_status = 'running'
+        state.config_snapshot = config
         controller.start_experiment(config)
     except Exception as exc:
         log.error('start_experiment failed: %s', exc, exc_info=True)

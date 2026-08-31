@@ -128,3 +128,85 @@ def test_safe_int_bool_returns_default():
     from src.ui.controller import _safe_int
     assert _safe_int(True, 42) == 42
     assert _safe_int(False, 42) == 42
+
+
+def test_safe_float_with_various_inputs():
+    """_safe_float must handle bool, nan, inf, valid string, invalid string."""
+    from src.ui.controller import _safe_float
+    assert _safe_float("3.14", 10.0) == 3.14
+    assert _safe_float("invalid", 10.0) == 10.0
+    assert _safe_float(True, 10.0) == 10.0
+    assert _safe_float(False, 10.0) == 10.0
+    assert _safe_float(float('nan'), 10.0) == 10.0
+    assert _safe_float(float('inf'), 10.0) == 10.0
+    assert _safe_float(float('-inf'), 10.0) == 10.0
+
+
+def test_coerce_params_nan_and_inf():
+    from src.ui.controller import _coerce_params
+    schema = {
+        "int_param": {"type": "int", "default": 10, "min": 0, "max": 100},
+        "float_param": {"type": "float", "default": 5.5, "min": 0.0, "max": 50.0},
+    }
+    params = {
+        "int_param": float("nan"),
+        "float_param": float("inf"),
+    }
+    res = _coerce_params(params, schema)
+    assert res["int_param"] == 10
+    assert res["float_param"] == 5.5
+
+
+def test_global_poll_terminal_status_protection(monkeypatch):
+    from src.ui.app import _global_poll, controller, state
+
+    # Reset controller & state
+    controller.terminal_status = "worker_done"
+    controller.terminal_error = ""
+    state.worker_died = True
+    state.worker_status = "worker_done"
+
+    # Mock poll_telemetry returning no new terminal event, but worker_died = True
+    monkeypatch.setattr(controller, "poll_telemetry", lambda: {
+        "telemetry": None, "verdicts": [], "terminal": None, "worker_died": True
+    })
+    monkeypatch.setattr(controller, "cleanup_worker", lambda: None)
+
+    _global_poll()
+
+    # Existing worker_done should be preserved, not overwritten with worker_error
+    assert controller.terminal_status == "worker_done"
+    assert state.worker_status == "worker_done"
+
+
+def test_global_poll_terminal_before_worker_died(monkeypatch):
+    from src.ui.app import _global_poll, controller, state
+
+    controller.terminal_status = None
+    controller.terminal_error = ""
+    state.worker_died = False
+    state.worker_status = "idle"
+
+    # Step 1: terminal event received while worker process is still alive
+    monkeypatch.setattr(controller, "poll_telemetry", lambda: {
+        "telemetry": None, "verdicts": [],
+        "terminal": {"action": "worker_done", "error": ""},
+        "worker_died": False,
+    })
+    _global_poll()
+
+    assert controller.terminal_status == "worker_done"
+    assert state.worker_status == "worker_done"
+
+    # Step 2: Next poll tick — terminal event is None, worker_died becomes True
+    monkeypatch.setattr(controller, "poll_telemetry", lambda: {
+        "telemetry": None, "verdicts": [], "terminal": None, "worker_died": True
+    })
+    monkeypatch.setattr(controller, "cleanup_worker", lambda: None)
+    _global_poll()
+
+    assert controller.terminal_status == "worker_done"
+    assert state.worker_status == "worker_done"
+
+
+

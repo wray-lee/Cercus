@@ -13,7 +13,7 @@
     const cssH = Math.max(1, cssW * hModel / wModel);
     const pw = Math.round(cssW * dpr), ph = Math.round(cssH * dpr);
     if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
-    return { dpr, sx: cssW / wModel, sy: cssH / hModel };
+    return { dpr, sx: cssW / wModel, sy: cssH / hModel, cssW };
   }
 
   window.cercusTraj = function(data) {
@@ -22,7 +22,7 @@
 
     // sizeCanvas BEFORE signature check — resize must happen even when data is unchanged
     const ctx = cv.getContext('2d');
-    const { dpr, sx, sy } = sizeCanvas(cv, 150, 150);
+    const { dpr, sx, sy, cssW } = sizeCanvas(cv, 150, 150);
 
     const pts = data.trail_points || [];
     const angle = data.angle || 0;
@@ -30,7 +30,7 @@
     const last = pts.length ? pts[pts.length-1] : [0,0];
     const sig = pts.length + '|' + first[0] + '|' + first[1] + '|' + last[0] + '|' + last[1] + '|' + angle
               + '|' + (data.min_x||0) + '|' + (data.max_x||0) + '|' + (data.min_y||0) + '|' + (data.max_y||0)
-              + '|' + cv.width + '|' + cv.height;
+              + '|' + cv.width + '|' + cv.height + '|' + cssW + '|' + dpr;
     if (sig === lastSigs[data.canvasId]) return;
     lastSigs[data.canvasId] = sig;
     ctx.setTransform(dpr * sx, 0, 0, dpr * sy, 0, 0);
