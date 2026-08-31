@@ -67,7 +67,8 @@ def main():
         ui.navigate.to(f'/dashboard?token={DASHBOARD_TOKEN}')
 
     # Single global timer for telemetry polling (62.5 Hz)
-    app.on_startup(lambda: ui.timer(0.016, _global_poll))
+    # Must use app.timer (not ui.timer) so it runs globally, not per-client
+    app.on_startup(lambda: app.timer(0.016, _global_poll))
 
     print(f'Dashboard token: {DASHBOARD_TOKEN}')
     print(f'Monitor available at: http://<host>:8080/monitor')
