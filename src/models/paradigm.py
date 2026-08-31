@@ -129,11 +129,15 @@ class BaseParadigm(ABC):
     def get_full_schema(cls) -> Dict[str, Dict[str, Any]]:
         """Single entry point for UI form generation and config coercion.
 
-        Trigger channels first, paradigm-declared params second, so a paradigm
-        that declares a key of the same name WINS — one widget, its default.
+        Paradigm-declared params first, trigger channels appended after, so
+        Execution Mode (the gate) renders above the rows it controls. A
+        paradigm that declares a key of the same name WINS — one widget, its
+        default.
         """
-        merged: Dict[str, Dict[str, Any]] = dict(cls.get_kinematic_trigger_schema())
-        merged.update(cls.get_parameter_schema())
+        merged: Dict[str, Dict[str, Any]] = dict(cls.get_parameter_schema())
+        for k, v in cls.get_kinematic_trigger_schema().items():
+            if k not in merged:
+                merged[k] = v
         return merged
 
     @classmethod

@@ -84,18 +84,37 @@ def build_dashboard(state, controller):
 
         phase_pill.text = state.phase
 
-        # Update status dot color based on phase
+        # Update status dot color based on phase — support both named and hex
         dot_colors = {
             'cyan': '#3B82F6', 'lime': '#84CC16', 'green': '#10B981',
             'orange': '#F59E0B', 'red': '#EF4444', 'gray': '#64748B',
+            'white': '#F1F5F9', 'yellow': '#EAB308',
         }
-        dot_color = dot_colors.get(state.ui_color, '#64748B')
+        raw_color = state.ui_color or 'gray'
+        if raw_color.startswith('#'):
+            dot_color = raw_color  # hex passthrough (e.g. #4488ff)
+        else:
+            dot_color = dot_colors.get(raw_color, '#64748B')
         phase_dot.content = f'<span class="status-dot" style="background: {dot_color};"></span>'
 
         sess_label.text = f'session {state.session_num}'
         trial_label.text = f'trial {state.trial_idx} / {state.total_trials}'
         update_worker_badge(worker_badge, state.worker_status, state.worker_error)
-        status_label.text = state.status_text
+
+        # Status text with terminal event details
+        if state.worker_died:
+            terminal_status = controller.terminal_status or ''
+            terminal_error = controller.terminal_error or ''
+            if terminal_status == 'worker_done':
+                status_label.text = 'Experiment completed'
+            elif terminal_status == 'worker_abort':
+                status_label.text = 'Experiment aborted'
+            elif terminal_status == 'worker_error':
+                status_label.text = f'Error: {terminal_error}' if terminal_error else 'Worker error'
+            else:
+                status_label.text = 'Worker disconnected'
+        else:
+            status_label.text = state.status_text
 
         km = state.kinematic
         kin_angle.text = f"θ: {fmt_val(km.get('k_angle'))}"
@@ -126,6 +145,8 @@ def build_dashboard(state, controller):
 
 def _start(controller, get_form_values, state, start_btn, stop_btn):
     from src.ui.controller import ExperimentController
+    import logging
+    log = logging.getLogger(__name__)
     form = get_form_values()
     config = ExperimentController.build_config(form)
     if controller.calib_matrix:
@@ -134,7 +155,16 @@ def _start(controller, get_form_values, state, start_btn, stop_btn):
     state.status_text = 'Running...'
     state.worker_status = 'running'
     state.config_snapshot = config  # populate for /monitor display
-    controller.start_experiment(config)
+    try:
+        controller.start_experiment(config)
+    except Exception as exc:
+        log.error('start_experiment failed: %s', exc, exc_info=True)
+        state.status_text = f'Start failed: {exc}'
+        state.worker_status = 'worker_error'
+        state.worker_error = str(exc)
+        start_btn.enable()
+        stop_btn.disable()
+        return
     start_btn.disable()
     stop_btn.enable()
 
