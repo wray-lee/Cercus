@@ -21,13 +21,14 @@ def trajectory_canvas(state) -> ui.element:
         ui.html(f'<canvas id="{canvas_id}" style="width:100%;height:100%"></canvas>')
 
     async def update():
+        bbox = state.trail_bbox
         data = {
             'canvasId': canvas_id,
             'trail_points': state.trail_points[-1000:],
-            'min_x': state._trail_min_x,
-            'max_x': state._trail_max_x,
-            'min_y': state._trail_min_y,
-            'max_y': state._trail_max_y,
+            'min_x': bbox[0] if bbox else None,
+            'max_x': bbox[1] if bbox else None,
+            'min_y': bbox[2] if bbox else None,
+            'max_y': bbox[3] if bbox else None,
             'angle': state.trail_angle,
         }
         await ui.run_javascript(f'window.cercusTraj && window.cercusTraj({__import__("json").dumps(data)})')
