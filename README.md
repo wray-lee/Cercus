@@ -10,7 +10,7 @@
 
 Cercus enforces strict unidirectional data flow and functional isolation between four subsystems:
 
-- **Master Dashboard** (`src/ui/dashboard.py`): A non-blocking GUI for parameter configuration, dynamic form generation, and real-time status monitoring. It also spawns a daemon **web mirror** (`src/core/web_telemetry.py`) that broadcasts the dashboard state to any browser on the LAN over WebSocket.
+- **Dashboard** (`src/ui/app.py`): A NiceGUI-based desktop application (native window via pywebview) for parameter configuration, dynamic form generation, and real-time status monitoring. A read-only **web monitor** (`/monitor`) is accessible from any browser on the LAN.
 - **Pure Logic Core** (`src/models/paradigm.py`): A mathematical modeling layer that processes time deltas and hardware feedback to output standardized rendering instruction streams.
 - **Stateless Renderer** (`src/core/render.py`): Executes basic geometric drawing instructions (`circle`, `rect`, `element_array`) without maintaining state.
 - **Asynchronous Hardware Daemon** (`src/core/hardware.py`): Handles high-frequency sensor data acquisition and TTL trigger signal dispatch.
@@ -38,6 +38,8 @@ Launch the dashboard:
 python main.py
 ```
 
+The native dashboard window opens automatically. A read-only monitor is available at `http://<your-ip>:8080/monitor` from any browser on the LAN.
+
 ## 3. Built-in Paradigms
 
 The following paradigms are built-in and can be dynamically loaded via the dashboard dropdown:
@@ -54,19 +56,12 @@ The following paradigms are built-in and can be dynamically loaded via the dashb
 
 ## 4. Physical Calibration
 
-The dashboard right-side panel provides a **Physical Calibration** system for decoupling three-axis sensor cross-talk.
+Calibration is performed using an external tool that generates a `calibration_cfg.json` file containing the 3×3 decoupling matrix.
 
-### Workflow
-
-1. Click **Enter Calibration** to activate the calibration worker (the stimulus worker will be shut down).
-2. Set **Radius (mm)** — the known radius of the calibration sphere.
-3. Set **Rotations** — the number of full rotations to record per axis.
-4. Click **Calibrate X** (or Y / Z). Roll the sphere strictly in the **positive** direction for that axis. Click **Stop Axis** when done.
-5. Repeat for all three axes. The raw vector and target distance for each axis will be displayed.
-6. Once all three axes are complete, click **Apply Matrix**. The system computes a 3x3 decoupling matrix via `inverse(raw_matrix) * target_matrix` and saves it to `calibration_cfg.json` in the project root.
-7. The matrix is automatically loaded on subsequent launches and injected into the hardware daemon.
-
-Alternatively, you can manually edit the 3x3 matrix entries in the **Manual Calibration Matrix** grid and click **Save/Update Manual Parameters**.
+The dashboard provides a **Calibration Matrix** panel (collapsible) that:
+1. Loads the matrix from `calibration_cfg.json` on startup.
+2. Displays the 3×3 matrix values.
+3. Allows reloading and applying the matrix, which is injected into the hardware daemon for subsequent experiments.
 
 ## 5. Modifying Default Parameters
 
@@ -88,42 +83,15 @@ PARADIGM_REGISTRY: Dict[str, type] = {
 }
 ```
 
-The dashboard defaults to the **first key** in this dictionary. Move your most-used paradigm to the first position. For example, to default to `Grating`:
-
-```python
-PARADIGM_REGISTRY: Dict[str, type] = {
-    "Grating": GratingParadigm,           # <-- now the default
-    "Looming": LoomingParadigm,
-    ...
-}
-```
+The dashboard defaults to the **first key** in this dictionary. Move your most-used paradigm to the first position.
 
 ### Change global default parameters (Subject ID, Resolution, ITI/ISI, etc.)
 
-Open `src/ui/dashboard.py` and find the `_create_widgets` method. Search for the corresponding `ctk.StringVar(value="...")` and change the value string. Common examples:
-
-| Parameter         | Line (approx.)                                            | Current Default | Change To                                   |
-| ----------------- | --------------------------------------------------------- | --------------- | ------------------------------------------- |
-| Subject ID        | `self.subject_var = ctk.StringVar(value="cricket_001")`   | `"cricket_001"` | Your lab's subject ID                       |
-| Resolution        | `self.resolution_var = ctk.StringVar(value="3840,1080")`  | `"3840,1080"`   | Your screen resolution (e.g. `"1920,1080"`) |
-| ITI Range         | `self.iti_range_var = ctk.StringVar(value="60-90")`       | `"60-90"`       | Your inter-trial interval (e.g. `"30-45"`)  |
-| ISI Range         | `self.isi_range_var = ctk.StringVar(value="300-300")`     | `"300-300"`     | Your inter-session interval                 |
-| Viewing Distance  | `self.viewing_distance_var = ctk.StringVar(value="30.0")` | `"30.0"`        | Your viewing distance in cm                 |
-| Screen Width (cm) | `self.screen_width_cm_var = ctk.StringVar(value="53.0")`  | `"53.0"`        | Your screen physical width in cm            |
+Default values are set in `src/ui/components/config_panel.py`. Edit the `value=` argument of the corresponding `ui.input()` or `ui.number()` widget.
 
 ### Change paradigm-specific parameters (contrast, spatial frequency, speed, etc.)
 
-Open `src/models/paradigm.py` and find the target paradigm class. Inside that class, locate the `get_parameter_schema(cls)` method. Each parameter is a dictionary entry — change the `"default"` value. Example for Grating spatial frequency:
-
-```python
-"Spatial Freq (cpd)": {
-    "type": "float",
-    "default": 0.05,      # <-- change this to your desired default
-    "min": 0.001,
-    "max": 10.0,
-    "label": "Spatial Frequency (cpd)",
-},
-```
+Open `src/models/paradigm.py` and find the target paradigm class. Inside that class, locate the `get_parameter_schema(cls)` method. Each parameter is a dictionary entry — change the `"default"` value.
 
 ## 6. Data Output
 
@@ -134,33 +102,34 @@ Dual-track record files are automatically generated in the `data/` directory, al
 
 Both files share `global_trial_id` as the join key for cross-referencing trial-level events with frame-level kinematics.
 
-## 7. Web Telemetry Mirror
+## 7. Web Monitor
 
-The dashboard runs a lightweight real-time **web mirror** of its own state in a separate daemon process (`src/core/web_telemetry.py`, FastAPI + uvicorn). Any device on the same LAN can open the mirror in a browser — no experiment run is required; configuration and calibration are visible immediately.
+The dashboard runs an integrated web server (NiceGUI + uvicorn) accessible from any browser on the LAN.
 
 ### Access
 
-- The mirror URL is shown in the dashboard status bar, e.g. `Web: http://192.168.1.10:8000`.
-- The server binds `0.0.0.0:8000` (or the first free port at/above 8000) and serves a single-file frontend (`src/ui/static/index.html`).
-- The browser page header has a **Copy State JSON** button for debugging.
+- The monitor URL is printed at startup, e.g. `Monitor available at: http://<host>:8080/monitor`.
+- The server binds `0.0.0.0:8080`.
+- The dashboard native window is token-gated — browser access to `/dashboard` is denied.
 
 ### What it shows
 
-- **Live status**: phase badge, session + trial progress (segmented bar), full hardware-state grid, worker status, and the dashboard status line.
-- **Stimulus twin**: a 400×150 canvas replaying the stimulus render instructions (`ui_twin`).
-- **Trajectory**: a 150×150 canvas plotting the recent path with the current heading arrow, plus θ/ω/D kinematics.
-- **Calibration**: live raw DX/DY/DZ odometers, per-axis results checklist, and the manual 3×3 matrix.
-- **Config**: all parameters, including dynamic paradigm params and kinematic trigger thresholds.
+- **Live status**: phase badge, session + trial progress, worker status, and status line.
+- **Stimulus twin**: a canvas replaying the stimulus render instructions.
+- **Trajectory**: a canvas plotting the recent path with the current heading arrow, plus θ/ω/D kinematics.
+- **Calibration matrix**: the current 3×3 decoupling matrix.
+- **Configuration**: all parameters, including dynamic paradigm params.
+- **Verdict table**: post-trial behavioral classification results.
 
-### Data protocol
+### Architecture
 
-The dashboard pushes a complete `full_state` JSON snapshot (`config`, `calibration`, `live`, `visual`) at up to 20 Hz over the WebSocket endpoint `/ws/full_state`. The frontend batches rendering via `requestAnimationFrame` and only rewrites changed DOM values.
+The dashboard and monitor share a single NiceGUI server process. A global `app.timer` at 62.5 Hz polls the worker's `mp.Queue` and updates a shared `AppState` object. Per-client timers in each page read from this shared state to update their widgets — no queue races.
 
 ### Notes
 
 - The browser and the experiment PC must be on the same network.
-- The frontend loads Tailwind / Lucide / Google Fonts from CDNs; on a fully offline network the layout degrades but data still updates.
-- The web process is best-effort: a crash never affects the running experiment, and it self-heals within ~2 s.
+- The monitor is strictly read-only — no start/stop controls are exposed.
+- Closing the native dashboard window shuts down the server.
 
 ---
 
@@ -184,43 +153,13 @@ class MyParadigm(BaseParadigm):
 ### Step 2: Define UI Mapping Interfaces
 
 - **`get_available_patterns(cls)`**: Return a list of supported pattern names (shown in the dashboard Pattern dropdown).
-
-```python
-@classmethod
-def get_available_patterns(cls) -> List[str]:
-    return ["My Pattern A", "My Pattern B"]
-```
-
 - **`get_parameter_schema(cls)`**: Declare the dynamic UI parameter dictionary. The framework reads the `type` field to auto-generate dashboard form widgets. Supported types: `int`, `float`, `str`, `choice`, `bool`, `info`, `filepath`.
-
-```python
-@classmethod
-def get_parameter_schema(cls) -> Dict[str, Dict[str, Any]]:
-    return {
-        "Speed (deg/s)": {
-            "type": "float",
-            "default": 30.0,
-            "min": 0.1,
-            "max": 1000.0,
-            "label": "Speed (deg/s)",
-        },
-        "Execution Mode": {
-            "type": "choice",
-            "default": "Auto",
-            "choices": ["Auto", "Manual", "Kinematic"],
-            "label": "Execution Mode",
-        },
-    }
-```
 
 ### Step 3: Implement Core Lifecycle
 
 - **`generate_trials(self, pattern_key)`**: Construct and return the trial contexts (`List[dict]`) for the session based on the selected pattern.
-
 - **`prepare_trial(self, trial_context)`**: Return hardware initialization serial commands before a trial starts (or an empty string `""`).
-
 - **`get_idle_frame(self, hw_telemetry)`**: Return steady-state rendering instructions for ITI/ISI phases as `(cmds, telemetry_dict, sync_states)`.
-
 - **`process_frame(self, elapsed_time, trial_context, hw_telemetry)`**: The frame-level closed-loop calculation core. Return the state tuple `(is_done, cmds, telemetry_dict, sync_states)` based on the timestamp and hardware telemetry.
 
 ### Step 4: Standardized Rendering Instructions
@@ -241,108 +180,43 @@ Color values use PsychoPy RGB convention: `-1` = black, `0` = mid-gray, `+1` = w
 
 Every paradigm is responsible for appending the correct number of photodiode sync blocks to its `cmds` list. The framework provides `BaseParadigm._build_sync_markers(is_active, mode)` as a shared utility, but paradigms may implement their own coordinate logic if needed.
 
-**Rule 1 — Clock & Frame Tracking**
-
-The paradigm class must maintain an internal frame counter to drive the frame-rate flash indicator. Reset `self._frame_counter = 0` in `prepare_trial` (or during trial initialization), and increment it on every `process_frame` call:
-
-```python
-def prepare_trial(self, trial_context):
-    self._frame_counter = 0  # reset at trial start
-    return ""
-
-def process_frame(self, elapsed_time, trial_context, hw_telemetry):
-    self._frame_counter += 1
-    # ...
-```
-
-The counter powers the flash toggle: `odd = self._frame_counter % 2 == 1`.
-
-**Rule 2 — Channel Physical Alignment**
-
-| Screen Mode         | Block Count | Layout                                                                       |
-| ------------------- | ----------- | ---------------------------------------------------------------------------- |
-| **Dual (Surround)** | 4           | Left-bottom outer, left-bottom inner, right-bottom inner, right-bottom outer |
-| **Single**          | 2           | Bottom-right corner: inner (trial state) + outer (frame flash), side-by-side |
-
-- **Dual-screen paradigms** must append 4 sync blocks: the outermost blocks flash with frame rate, the inner blocks stay solid to indicate trial activation state.
-- **Single-screen paradigms** must append exactly 2 sync blocks, both tightly placed in the bottom-right corner — the inner block shows trial state (solid), the outer block flashes with the frame rate.
-
-```python
-# Single-screen: call in process_frame / get_idle_frame
-sync = self._build_sync_markers(stim_active, "single")
-# Dual-screen: call in process_frame / get_idle_frame
-sync = self._build_sync_markers(stim_active, "dual")
-```
-
-**Rule 3 — Layer Stacking Order**
-
-All sync / photodiode `rect` commands **must be placed at the very end** of the `cmds` list. This guarantees they render on the absolute top layer and are never occluded by stimulus backgrounds, masks, or overlays.
-
-```python
-cmds = []  # stimulus drawing commands
-cmds.append({...})  # circle, rect, element_array, etc.
-
-# --- sync blocks MUST be appended last ---
-sync = self._build_sync_markers(is_active, "single")  # or "dual"
-cmds.extend(sync)
-return cmds
-```
-
-**Reference Implementation** (`BaseParadigm._build_sync_markers`):
-
-```python
-def _build_sync_markers(self, is_active: bool, mode: str) -> list[dict]:
-    off, on = [-1, -1, -1], [1, 1, 1]  # PsychoPy RGB
-    odd = (self._frame_counter % 2 == 1)
-    margin, w, h = 10, 60, 60
-    half_w, half_h = self._win_w / 2.0, self._win_h / 2.0
-
-    if mode == "single":
-        # 2 blocks: bottom-right corner, side-by-side
-        flash_color = on if (is_active and odd) else off
-        active_color = on if is_active else off
-        positions = [
-            (half_w - margin - w * 1.5 - margin, -half_h + margin + h / 2),  # inner
-            (half_w - margin - w / 2, -half_h + margin + h / 2),              # outer
-        ]
-        colors = [active_color, flash_color]
-    elif mode == "dual":
-        # 4 blocks: left-bottom pair + right-bottom pair
-        outer_color = on if (is_active and odd) else off
-        inner_color = on if is_active else off
-        positions = [
-            (-half_w + margin + w / 2, -half_h + margin + h / 2),
-            (-half_w + margin + w * 1.5 + margin, -half_h + margin + h / 2),
-            (half_w - margin - w * 1.5 - margin, -half_h + margin + h / 2),
-            (half_w - margin - w / 2, -half_h + margin + h / 2),
-        ]
-        colors = [outer_color, inner_color, inner_color, outer_color]
-
-    cmds = []
-    for i, (pos, color) in enumerate(zip(positions, colors)):
-        cmds.append({
-            "id": f"_sync_{i}", "type": "rect",
-            "width": w, "height": h, "pos": pos,
-            "fillColor": color, "lineColor": color, "lineWidth": 0,
-        })
-    return cmds
-```
-
 ### Step 5: Global Registration
 
 Add the new class to the `PARADIGM_REGISTRY` dictionary at the bottom of `src/models/paradigm.py`:
 
 ```python
 PARADIGM_REGISTRY: Dict[str, type] = {
-    "Looming": LoomingParadigm,
-    "ClassicLooming": ClassicLoomingParadigm,
-    "OpticFlow": OpticFlowParadigm,
-    "MovementTrace": MovementTraceParadigm,
-    "Blank": BlankParadigm,
-    "Grating": GratingParadigm,
-    "SingleLooming": SingleLoomingParadigm,
+    ...
     "MyParadigm": MyParadigm,  # <-- register here
 }
 ```
 
 The paradigm will appear in the dashboard dropdown on the next launch.
+
+## 2. UI Architecture
+
+The UI is built on a 3-layer architecture:
+
+```
+src/ui/
+├── app.py              # NiceGUI entry: ui.run(native=True), token, routing
+├── controller.py       # ExperimentController — worker lifecycle, config build
+├── state.py            # AppState — reactive state, telemetry consumer
+├── theme.py            # Dark mode + CSS variables
+├── components/
+│   ├── common.py       # Shared helpers (fmt_val, color_pill, etc.)
+│   ├── config_panel.py # Dynamic param form from paradigm schema
+│   ├── calibration.py  # Matrix display + load/apply
+│   ├── trajectory.py/js # Trajectory canvas (HTML5 Canvas)
+│   ├── twin_preview.py/js # Stimulus preview canvas
+│   ├── verdict_table.py # Post-trial verdict table
+│   └── hw_status.py    # Hardware metrics grid
+└── pages/
+    ├── dashboard.py    # /dashboard (native window, full controls)
+    └── monitor.py      # /monitor (browser, read-only)
+```
+
+- **ExperimentController**: Pure Python, no UI dependency. Manages worker processes, config building, calibration matrix I/O.
+- **AppState**: Reactive state updated by a single global timer. All UI pages read from this shared object.
+- **Pages**: Each page applies the theme and creates per-client UI timers that read from AppState.
+- **Components**: Reusable UI building blocks shared between dashboard and monitor pages.

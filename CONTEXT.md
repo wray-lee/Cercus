@@ -6,7 +6,7 @@ This document defines the domain model, system topology, and agent execution har
 
 ## 1. Elevator Pitch
 
-Cercus is a high-precision Python framework for insect (cricket) behavioral paradigms. It coordinates real-time visual stimulus generation, hardware-level wind trigger synchronization, optical flow/mouse kinematic tracking, and dual UI/web telemetry mirroring without sacrificing real-time deterministic loop performance.
+Cercus is a high-precision Python framework for insect (cricket) behavioral paradigms. It coordinates real-time visual stimulus generation, hardware-level wind trigger synchronization, optical flow/mouse kinematic tracking, and a unified NiceGUI dashboard with read-only web monitoring — without sacrificing real-time deterministic loop performance.
 
 ---
 
@@ -20,7 +20,11 @@ Cercus is a high-precision Python framework for insect (cricket) behavioral para
 | **Hardware / SerialDaemon** | Arduino Mega 2560 interface (`hardware.py`) controlling solenoid valves and reading optical mouse sensor frames non-blockingly via background daemon threads. |
 | **CoreRenderer** | Pure stateless visual drawing engine (`render.py`) mapping geometry objects to Pygame surfaces. |
 | **Worker Process** | Multi-processing worker node (`stimulus_worker.py`, `calibration_worker.py`) executing trial logic in an isolated process away from the main UI thread. |
-| **WebBridge & Telemetry Mirror** | Asynchronous HTTP/WebSocket server (`web_telemetry.py`, `web_bridge.py`) broadcasting live canvas frames and status telemetry to browser clients (`ui/static/index.html`). |
+| **ExperimentController** | Pure Python class (`src/ui/controller.py`) managing worker lifecycle, config building, queue communication, and calibration matrix I/O. No UI framework dependency. |
+| **AppState** | Reactive state object (`src/ui/state.py`) updated by a single global timer from the telemetry queue. All UI pages read from this shared object. |
+| **Dashboard** | NiceGUI native window (`src/ui/pages/dashboard.py`) providing full experiment control — parameter configuration, start/stop, calibration matrix display. Token-gated to prevent browser access. |
+| **Monitor** | Read-only NiceGUI page (`src/ui/pages/monitor.py`) accessible from any browser on the LAN. Shows live status, trajectory, verdicts, hardware state, and configuration — no control buttons. |
+| **Verdict** | Post-trial behavioral classification (`BaseParadigm.classify_response`) — escape, startle, or no_response — based on accumulated kinematic data. |
 
 ---
 
@@ -28,14 +32,16 @@ Cercus is a high-precision Python framework for insect (cricket) behavioral para
 
 ```
 +-----------------------------------------------------------------------+
-| Main UI Process (dashboard.py)                                        |
-|   ├── CustomTkinter Dashboard (Non-blocking callbacks)                |
-|   └── Web Bridge / Server (Static HTML + WebSocket mirror)            |
+| Main UI Process (NiceGUI server, single process)                      |
+|   ├── ExperimentController (worker lifecycle, config, calib matrix)   |
+|   ├── AppState (reactive state, global timer polls queue)             |
+|   ├── /dashboard page (native pywebview window, token-gated)          |
+|   └── /monitor page (browser-accessible, read-only)                   |
 +-----------------------------------+-----------------------------------+
                                     | mp.Queue (cmd_queue / telemetry_queue)
                                     v
 +-----------------------------------------------------------------------+
-| Worker Process (stimulus_worker.py / calibration_worker.py)            |
+| Worker Process (stimulus_worker.py)                                    |
 |   ├── SerialDaemon (Background I/O threads to Arduino)                |
 |   ├── KinematicEngine (Zero-allocation hot loop)                      |
 |   ├── BaseParadigm Subclass (State & Trial logic)                     |
@@ -46,7 +52,7 @@ Cercus is a high-precision Python framework for insect (cricket) behavioral para
 ### Boundary Constraints (Hard Rules)
 
 1. **Process Isolation (`BOUNDARY.md`)**:
-   - `dashboard.py` and workers (`stimulus_worker.py`) MUST NOT share global state or memory.
+   - The UI process and workers (`stimulus_worker.py`) MUST NOT share global state or memory.
    - Cross-process communication MUST ONLY use `multiprocessing.Queue` (`cmd_queue`, `telemetry_queue`).
 
 2. **Renderer Absolute Statelessness (`src/core/BOUNDARY.md`)**:
@@ -60,8 +66,10 @@ Cercus is a high-precision Python framework for insect (cricket) behavioral para
    - All paradigms MUST inherit `BaseParadigm` and register in `PARADIGM_REGISTRY`.
    - Never modify core infrastructure (`render.py`, `hardware.py`, `kinematics.py`) for individual paradigm features.
 
-5. **UI Boundary (`src/ui/BOUNDARY.md`)**:
-   - CustomTkinter callbacks MUST be non-blocking. UI collects parameters into config dicts and hands them off via queues.
+5. **UI Boundary**:
+   - NiceGUI page functions and timers MUST be non-blocking. UI collects parameters into config dicts and hands them off via queues.
+   - A single global `app.timer` polls the telemetry queue; per-client timers only read shared `AppState`.
+   - `/dashboard` is token-gated via `secrets.token_urlsafe`; `/monitor` is read-only with no control endpoints.
 
 ---
 

@@ -1,7 +1,4 @@
-customtkinter
+nicegui[native]>=3.16
 numpy
 psychopy
 pyserial
-fastapi
-uvicorn>=0.30  # >=0.30 required for ws="websockets-sansio"
-websockets

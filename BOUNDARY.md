@@ -7,7 +7,7 @@
 
 ## Process Physical Isolation
 
-- `dashboard.py` (main controller) and `stimulus_worker.py` / `calibration_worker.py` (worker nodes) MUST NOT share memory or global variables.
+- The UI process (`src/ui/app.py`) and workers (`stimulus_worker.py`) MUST NOT share memory or global variables.
 - The ONLY合法 path for cross-process data flow is `multiprocessing.Queue`.
 - `cmd_queue`: main -> worker (commands, config, abort signals).
 - `telemetry_queue`: worker -> main (status, metrics, terminal signals).
