@@ -25,6 +25,10 @@ def _global_poll():
         if terminal:
             controller.terminal_status = terminal.get('action', '')
             controller.terminal_error = terminal.get('error', '')
+        elif not controller.terminal_status:
+            # Worker died without sending a terminal event
+            controller.terminal_status = 'worker_error'
+            controller.terminal_error = 'Worker process exited unexpectedly'
         controller.cleanup_worker()
 
 
