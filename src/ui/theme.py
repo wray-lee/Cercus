@@ -3,21 +3,26 @@ from nicegui import ui
 
 _THEME_CSS = '''
     :root {
-        --bg: #0A0A0B;
-        --card: rgba(20, 20, 22, 0.7);
-        --card-solid: #141416;
-        --card2: #0E0E11;
-        --border: #262629;
-        --border-glow: linear-gradient(135deg, #22D3EE 0%, #A3E635 100%);
-        --text: #E5E7EB;
-        --muted: #71717A;
-        --accent: #22D3EE;
-        --lime: #A3E635;
-        --warn: #FB923C;
-        --err: #F87171;
+        --bg: #0B1120;
+        --bg-gradient-start: #0F172A;
+        --bg-gradient-end: #0B1120;
+        --card: rgba(15, 23, 42, 0.6);
+        --card-solid: #1E293B;
+        --card2: #0F172A;
+        --border: #334155;
+        --border-glow: linear-gradient(135deg, #3B82F6 0%, #06B6D4 100%);
+        --text: #F1F5F9;
+        --text-secondary: #94A3B8;
+        --muted: #64748B;
+        --accent: #3B82F6;
+        --accent-bright: #60A5FA;
+        --cyan: #06B6D4;
+        --lime: #84CC16;
+        --warn: #F59E0B;
+        --err: #EF4444;
     }
     body {
-        background: radial-gradient(circle at top left, #0F0F11 0%, #0A0A0B 100%) !important;
+        background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%) !important;
         overflow: hidden;
     }
     .nicegui-content {
@@ -27,33 +32,59 @@ _THEME_CSS = '''
     }
     .q-card {
         background: var(--card) !important;
-        backdrop-filter: blur(12px);
+        backdrop-filter: blur(16px);
         border: 1px solid var(--border);
-        border-radius: 10px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
+        border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(59,130,246,0.1);
     }
     .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
 
-    /* Compact form inputs with glow on focus */
-    .q-field--dense .q-field__control { min-height: 36px !important; }
-    .q-field--dense .q-field__label { font-size: 11px; }
-    .q-field--dense input { font-size: 12px; }
+    /* Enhanced form inputs with larger labels */
+    .q-field--dense .q-field__control {
+        min-height: 40px !important;
+        background: rgba(15, 23, 42, 0.5);
+        border-radius: 8px;
+    }
+    .q-field--dense .q-field__label {
+        font-size: 12px !important;
+        font-weight: 500 !important;
+        color: var(--text-secondary) !important;
+    }
+    .q-field--dense input, .q-field--dense .q-field__native {
+        font-size: 13px !important;
+        color: var(--text) !important;
+    }
     .q-field--focused .q-field__control {
-        box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.3) !important;
+        background: rgba(59, 130, 246, 0.1) !important;
+        border-color: var(--accent-bright) !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2) !important;
+    }
+    .q-field--outlined .q-field__control:before {
+        border-color: var(--border) !important;
     }
 
-    /* Buttons with gradient hover */
+    /* Buttons with blue gradient */
+    .q-btn {
+        text-transform: none;
+        font-weight: 600;
+        border-radius: 8px;
+    }
     .q-btn:hover {
-        box-shadow: 0 2px 8px rgba(34, 211, 238, 0.3);
+        box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4);
         transition: all 0.2s ease;
+        transform: translateY(-1px);
     }
 
-    /* Custom scrollbar */
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track { background: var(--card2); border-radius: 4px; }
+    /* Custom scrollbar with blue gradient */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track {
+        background: var(--card2);
+        border-radius: 5px;
+    }
     ::-webkit-scrollbar-thumb {
-        background: linear-gradient(135deg, #22D3EE 0%, #A3E635 100%);
-        border-radius: 4px;
+        background: linear-gradient(135deg, #3B82F6 0%, #06B6D4 100%);
+        border-radius: 5px;
+        border: 2px solid var(--card2);
     }
     ::-webkit-scrollbar-thumb:hover { opacity: 0.8; }
 
@@ -62,17 +93,31 @@ _THEME_CSS = '''
 
     /* Table zebra stripes */
     .q-table tbody tr:nth-child(even) {
-        background: rgba(14, 14, 17, 0.4);
+        background: rgba(15, 23, 42, 0.3);
+    }
+    .q-table thead th {
+        font-weight: 600 !important;
+        color: var(--text-secondary) !important;
     }
 
-    /* Status dot indicator */
+    /* Status dot indicator with blue glow */
     .status-dot {
-        width: 8px;
-        height: 8px;
+        width: 10px;
+        height: 10px;
         border-radius: 50%;
         display: inline-block;
-        margin-right: 6px;
-        box-shadow: 0 0 8px currentColor;
+        margin-right: 8px;
+        box-shadow: 0 0 12px currentColor;
+        animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
+    }
+
+    /* Card headers */
+    .glass-card {
+        background: rgba(30, 41, 59, 0.5) !important;
     }
 '''
 

@@ -86,10 +86,10 @@ def build_dashboard(state, controller):
 
         # Update status dot color based on phase
         dot_colors = {
-            'cyan': '#22D3EE', 'lime': '#A3E635', 'green': '#10B981',
-            'orange': '#FB923C', 'red': '#F87171', 'gray': '#71717A',
+            'cyan': '#3B82F6', 'lime': '#84CC16', 'green': '#10B981',
+            'orange': '#F59E0B', 'red': '#EF4444', 'gray': '#64748B',
         }
-        dot_color = dot_colors.get(state.ui_color, '#71717A')
+        dot_color = dot_colors.get(state.ui_color, '#64748B')
         phase_dot.content = f'<span class="status-dot" style="background: {dot_color};"></span>'
 
         sess_label.text = f'session {state.session_num}'

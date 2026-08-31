@@ -12,7 +12,7 @@ def config_panel(on_paradigm_change=None) -> tuple:
 
     with ui.card().classes('w-full glass-card') as card:
         # --- Fixed config fields (two-column grid for compactness) ---
-        ui.label('Configuration').classes('text-xs font-bold text-zinc-200 mb-1')
+        ui.label('Configuration').classes('text-sm font-bold mb-2').style('color: #F1F5F9;')
 
         with ui.row().classes('w-full items-center gap-1'):
             subject_input = ui.input('Subject ID', value='').props('dense outlined').classes('flex-grow')
@@ -54,7 +54,7 @@ def config_panel(on_paradigm_change=None) -> tuple:
 
         # --- Dynamic paradigm params ---
         ui.separator().classes('my-1')
-        ui.label('Paradigm Parameters').classes('text-xs font-semibold text-zinc-300 mb-1')
+        ui.label('Paradigm Parameters').classes('text-sm font-semibold mb-1').style('color: #94A3B8;')
         param_container = ui.column().classes('w-full gap-1')
 
     # Store references

@@ -12,17 +12,17 @@ def fmt_val(v):
 
 
 COLOR_MAP = {
-    'cyan': 'bg-cyan-500', 'lime': 'bg-lime-500', 'green': 'bg-green-500',
-    'orange': 'bg-orange-500', 'red': 'bg-red-500', 'gray': 'bg-zinc-700',
-    'white': 'bg-zinc-300', 'yellow': 'bg-yellow-500',
+    'cyan': 'bg-blue-500', 'lime': 'bg-lime-500', 'green': 'bg-emerald-500',
+    'orange': 'bg-orange-500', 'red': 'bg-red-500', 'gray': 'bg-slate-700',
+    'white': 'bg-slate-200', 'yellow': 'bg-yellow-500',
 }
 
 WORKER_COLORS = {
     'running': ('bg-lime-500', 'RUNNING'),
-    'worker_done': ('bg-cyan-500', 'DONE'),
+    'worker_done': ('bg-blue-500', 'DONE'),
     'worker_abort': ('bg-orange-500', 'ABORTED'),
     'worker_error': ('bg-red-500', 'ERROR'),
-    'idle': ('bg-zinc-700', 'IDLE'),
+    'idle': ('bg-slate-700', 'IDLE'),
 }
 
 
