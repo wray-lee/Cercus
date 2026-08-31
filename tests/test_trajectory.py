@@ -12,14 +12,14 @@ class _FakeBbox:
 
     TRAIL_JUMP_MM = 50.0
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._trail_points = []
         self._trail_min_x = None
         self._trail_max_x = None
         self._trail_min_y = None
         self._trail_max_y = None
 
-    def reset(self):
+    def reset(self) -> None:
         self._trail_points = []
         self._trail_min_x = None
         self._trail_max_x = None
@@ -49,7 +49,7 @@ class _FakeBbox:
         return True
 
 
-def test_none_sentinel_seeded_from_first_point():
+def test_none_sentinel_seeded_from_first_point() -> None:
     b = _FakeBbox()
     assert b._trail_min_x is None
     b.add_point(10.0, 20.0)
@@ -59,7 +59,7 @@ def test_none_sentinel_seeded_from_first_point():
     assert b._trail_max_y == 20.0
 
 
-def test_bbox_only_expands():
+def test_bbox_only_expands() -> None:
     b = _FakeBbox()
     b.add_point(0.0, 0.0)
     b.add_point(10.0, 10.0)
@@ -72,7 +72,7 @@ def test_bbox_only_expands():
     assert b._trail_max_y == 10.0
 
 
-def test_bbox_not_poisoned_by_origin_after_reset():
+def test_bbox_not_poisoned_by_origin_after_reset() -> None:
     """After reset at arbitrary position, bbox should not contain (0,0)."""
     b = _FakeBbox()
     b.add_point(40.0, 40.0)
@@ -83,21 +83,21 @@ def test_bbox_not_poisoned_by_origin_after_reset():
     assert b._trail_min_y == 41.0
 
 
-def test_nan_rejected():
+def test_nan_rejected() -> None:
     b = _FakeBbox()
     assert b.add_point(float('nan'), 1.0) is False
     assert b._trail_min_x is None  # no state change
     assert len(b._trail_points) == 0
 
 
-def test_inf_rejected():
+def test_inf_rejected() -> None:
     b = _FakeBbox()
     b.add_point(1.0, 1.0)
     assert b.add_point(float('inf'), 2.0) is False
     assert b._trail_max_x == 1.0  # unchanged
 
 
-def test_jump_gate_resets_bbox():
+def test_jump_gate_resets_bbox() -> None:
     b = _FakeBbox()
     b.add_point(0.0, 0.0)
     b.add_point(1.0, 1.0)

@@ -1,6 +1,8 @@
 """Monitor page — /monitor (read-only, browser-accessible, no controls)."""
 from nicegui import ui
 
+from src.ui.controller import ExperimentController
+from src.ui.state import AppState
 from src.ui.components.trajectory import trajectory_canvas
 from src.ui.components.twin_preview import twin_preview_canvas, update_twin
 from src.ui.components.verdict_table import verdict_table
@@ -9,7 +11,7 @@ from src.ui.components.calibration import calibration_display
 from src.ui.components.status_strip import build_status_strip, create_tick
 
 
-def build_monitor(state, controller):
+def build_monitor(state: AppState, controller: ExperimentController) -> None:
     """Build the read-only monitor UI. Called inside @ui.page handler."""
     from src.ui.theme import apply_theme
     apply_theme()
@@ -71,7 +73,7 @@ def build_monitor(state, controller):
     tick_timer = ui.timer(0.033, tick)
 
     # Canvas updates at 20Hz
-    async def visual_tick():
+    async def visual_tick() -> None:
         try:
             if hasattr(traj_container, '_traj_update'):
                 await traj_container._traj_update()

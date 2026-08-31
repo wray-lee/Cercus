@@ -201,7 +201,7 @@ _THEME_CSS = '''
 '''
 
 
-def apply_theme():
+def apply_theme() -> None:
     """Call inside each @ui.page function.
 
     NiceGUI script mode detects global-scope UI calls and raises RuntimeError

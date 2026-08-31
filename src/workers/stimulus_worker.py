@@ -2,11 +2,13 @@ import multiprocessing as mp
 import queue
 import random
 import signal
+import threading
 import time
-import numpy
-from typing import Dict, Any, List
+from typing import Any, Dict, List, Tuple
 
-from src.core.hardware import SerialDaemon, MockSerialDaemon, KinematicsParser
+import numpy
+
+from src.core.hardware import KinematicsParser, MockSerialDaemon, SerialDaemon
 from src.core.kinematics import KinematicEngine
 from src.core.logger import GroundTruthLogger
 from src.core.render import CoreRenderer
@@ -17,16 +19,20 @@ adaption_duration: float = 3.0  # seconds
 initial_baseline_dur: float = 2.0
 ABORT_KEY = "0"
 
-def create_ipc_queues():
+_shutdown_event = threading.Event()
+
+
+def create_ipc_queues() -> Tuple[mp.Queue, mp.Queue]:
     return mp.Queue(maxsize=32), mp.Queue(maxsize=256)
 
 
-def _term_handler(signum, frame):
-    raise SystemExit(f"Received signal {signum}")
+def _term_handler(signum: int, frame: Any) -> None:
+    _shutdown_event.set()
 
 
-def worker_entry(config, cmd_q, telemetry_q):
+def worker_entry(config: Dict[str, Any], cmd_q: mp.Queue, telemetry_q: mp.Queue) -> None:
     import sys
+    _shutdown_event.clear()
     signal.signal(signal.SIGTERM, _term_handler)
     signal.signal(signal.SIGINT, _term_handler)
 
@@ -37,15 +43,19 @@ def worker_entry(config, cmd_q, telemetry_q):
 
 
 class ExperimentAbort(Exception):
+    """Exception raised when an experiment is aborted via UI or abort key."""
     pass
 
 
 class HardwareDisconnectError(Exception):
+    """Exception raised when hardware serial daemon stops unexpectedly."""
     pass
 
 
 class GenericWorker:
-    def __init__(self, config: Dict[str, Any], cmd_q: mp.Queue, telemetry_q: mp.Queue):
+    """Worker process executing experimental trials, stimulus rendering, and telemetry."""
+
+    def __init__(self, config: Dict[str, Any], cmd_q: mp.Queue, telemetry_q: mp.Queue) -> None:
         from src.models.paradigm import BaseParadigm
         BaseParadigm._apply_random_seed(config)
         self.config = config
@@ -123,6 +133,9 @@ class GenericWorker:
         if parent is not None and not parent.is_alive():
             self.abort_flag = True
 
+        if _shutdown_event.is_set():
+            self.abort_flag = True
+
         if self.abort_flag:
             raise ExperimentAbort("Received abort command")
 
@@ -155,6 +168,7 @@ class GenericWorker:
             dy_idx = self._dy_idx
             dz_idx = self._dz_idx
             field_keys = self._field_keys
+            cal_fields = None
             for sys_t, raw in items:
                 row = self.parser.parse(sys_t, raw, g_id)
                 if row is None:
@@ -172,8 +186,11 @@ class GenericWorker:
                     float(cal_fields[dy_idx]) if dy_idx >= 0 else 0.0,
                     float(cal_fields[dz_idx]) if dz_idx >= 0 else 0.0,
                 )
-                # Build tel_dict only for the last item (used by _inject_kinematics)
-                self._last_tel_data = dict(zip(field_keys, cal_fields))
+
+            if cal_fields is not None:
+                # Update pre-allocated dictionary in place for the last item
+                for idx, k in enumerate(field_keys):
+                    self._last_tel_data[k] = cal_fields[idx]
 
             if kin_rows and log_open:
                 logger.log_kinematics_batch(kin_rows)
@@ -242,7 +259,7 @@ class GenericWorker:
         renderer.draw_commands(cmds)
         renderer.flip()
 
-    def run(self):
+    def run(self) -> None:
         hw_daemon, logger, renderer, core_module = None, None, None, None
         try:
             from psychopy import core, event

@@ -2,7 +2,7 @@
 from nicegui import ui, app
 
 
-def titlebar():
+def titlebar() -> None:
     """Build draggable titlebar with window controls."""
     with ui.row().classes('w-full items-center px-4 gap-2 drag-handle').style(
         'height: 28px; '

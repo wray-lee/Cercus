@@ -1,4 +1,5 @@
 """Hardware state display — NiceGUI component."""
+from typing import Any
 from nicegui import ui
 
 # Axis colors matching v1.0.0 odometer style
@@ -11,7 +12,7 @@ _ODO_COLORS = {
 _ODO_KEYS = ('dx', 'dy', 'dz')
 
 
-def hw_status_panel(state) -> ui.element:
+def hw_status_panel(state: Any) -> ui.element:
     """Create hardware metrics display bound to AppState."""
     with ui.card().classes('w-full') as card:
         with ui.row().classes('items-center gap-1.5 mb-1'):
@@ -40,7 +41,7 @@ def hw_status_panel(state) -> ui.element:
     _prev = {}
     _prev_metrics_keys = {'_keys': None}
 
-    def refresh():
+    def refresh() -> None:
         metrics = state.hardware_metrics or {}
 
         # ── Odometers: update text in place ──

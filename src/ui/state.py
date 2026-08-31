@@ -12,10 +12,10 @@ class AppState:
     TRAIL_JUMP_MM = 50.0
     TRAIL_MAX_POINTS = 1000
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset all state to idle defaults."""
         # Live telemetry
         self.phase: str = "IDLE"
@@ -73,7 +73,7 @@ class AppState:
     # Event application
     # ------------------------------------------------------------------
 
-    def set_aborting(self):
+    def set_aborting(self) -> None:
         """Mark the experiment as aborting — suppresses telemetry overwrites."""
         self._aborting = True
         self.phase = 'ABORTING'
@@ -81,7 +81,7 @@ class AppState:
         self.status_text = 'Stopping experiment...'
         self.worker_status = 'worker_abort'
 
-    def apply(self, poll_result: dict):
+    def apply(self, poll_result: dict) -> None:
         """Apply a poll_telemetry result dict to update state."""
         tel = poll_result.get("telemetry")
         # Suppress telemetry overwrites while aborting — the worker may

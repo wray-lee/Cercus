@@ -1,11 +1,18 @@
-from typing import Dict, Any
+from typing import Any, Dict, List, Tuple
+
 import numpy as np
 
 
 class CoreRenderer:
+    """Pure drawing engine mapping visual commands to PsychoPy window operations."""
+
     def __init__(
-        self, win_size: tuple, is_fullscr: bool, screen_id: int, wait_blanking: bool
-    ):
+        self,
+        win_size: Tuple[int, int],
+        is_fullscr: bool,
+        screen_id: int,
+        wait_blanking: bool,
+    ) -> None:
         from psychopy import visual
 
         self.win = visual.Window(
@@ -39,7 +46,7 @@ class CoreRenderer:
         "TextStim", "ElementArrayStim", "Line", "Polygon",
     }
 
-    def _create_obj(self, cmd: dict) -> Any:
+    def _create_obj(self, cmd: Dict[str, Any]) -> Any:
         # New protocol: reflection-based instantiation (whitelist-gated)
         class_name = cmd.get("class_name")
         if class_name:
@@ -82,7 +89,7 @@ class CoreRenderer:
                 return cls(self.win)
         return None
 
-    def _apply_command(self, cmd: dict):
+    def _apply_command(self, cmd: Dict[str, Any]) -> None:
         obj_id = cmd.get("id")
 
         # ElementArrayStim: always a special-case rendering path
@@ -162,16 +169,16 @@ class CoreRenderer:
 
         obj.draw()
 
-    def draw_commands(self, commands: list):
+    def draw_commands(self, commands: List[Dict[str, Any]]) -> None:
         for cmd in commands:
             self._apply_command(cmd)
 
-    def flip(self):
+    def flip(self) -> None:
         self.win.flip()
 
-    def render_frame(self, commands: list):
+    def render_frame(self, commands: List[Dict[str, Any]]) -> None:
         self.draw_commands(commands)
         self.flip()
 
-    def close(self):
+    def close(self) -> None:
         self.win.close()

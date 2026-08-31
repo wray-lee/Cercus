@@ -1,6 +1,7 @@
 """Twin stimulus preview — NiceGUI component wrapping HTML5 Canvas."""
 import json
 from pathlib import Path
+from typing import Any
 from nicegui import ui
 
 _JS_TEXT = (Path(__file__).parent / 'twin_preview.js').read_text(encoding='utf-8')
@@ -31,7 +32,7 @@ def twin_preview_canvas() -> ui.element:
     return container
 
 
-async def update_twin(container, twin_data):
+async def update_twin(container: Any, twin_data: Any) -> None:
     """Push new twin data to the canvas."""
     data = {'canvasId': container._twin_canvas_id, 'twin': twin_data}
     await ui.run_javascript(f'window.cercusTwin && window.cercusTwin({json.dumps(data)})')

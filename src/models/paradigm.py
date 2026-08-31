@@ -1,8 +1,9 @@
 import math
 import random
-import numpy as np
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Tuple, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+import numpy as np
 
 
 def schema_condition_met(current: Any, expected: Any) -> bool:
@@ -18,6 +19,7 @@ def schema_condition_met(current: Any, expected: Any) -> bool:
 
 
 class BaseParadigm(ABC):
+    """Abstract base class defining experiment protocol, trials, and stimulus rendering."""
     @staticmethod
     def _apply_random_seed(config: dict) -> None:
         raw = str(config.get("Random Seed", "Auto")).strip()
@@ -236,7 +238,7 @@ class BaseParadigm(ABC):
             })
         return cmds
 
-    def classify_response(self, engine, trial_context: dict, trial_duration: float) -> dict:
+    def classify_response(self, engine: Any, trial_context: dict, trial_duration: float) -> dict:
         """Post-trial behavioral classification from accumulated kinematics.
 
         Default three-way: escape / startle / no_response.
@@ -283,6 +285,8 @@ class BaseParadigm(ABC):
 
 
 class LoomingParadigm(BaseParadigm):
+    """Multi-looming stimulus paradigm with expanding visual discs and wind triggers."""
+
     EXPERIMENT_PATTERNS = {
         "Baseline Visual": {
             "type": "baseline_visual",
@@ -331,7 +335,7 @@ class LoomingParadigm(BaseParadigm):
         },
     }
 
-    def __init__(self, debug_mode: bool = False, config: dict = None):
+    def __init__(self, debug_mode: bool = False, config: Optional[dict] = None) -> None:
         self.config = config or {}
         self.viewing_distance_cm = float(self.config.get("Viewing Distance (cm)", 30.0))
         self.screen_width_cm = float(self.config.get("Screen Width (cm)", 53.0))
@@ -685,13 +689,15 @@ class LoomingParadigm(BaseParadigm):
 
 
 class ClassicLoomingParadigm(BaseParadigm):
+    """Classic single-axis looming stimulus paradigm with configurable visual parameters."""
+
     EXPERIMENT_PATTERNS = {
         "Classic Looming (Random L/R)": "Random L/R",
         "Classic Looming (Always Left)": "Always Left",
         "Classic Looming (Always Right)": "Always Right",
     }
 
-    def __init__(self, debug_mode: bool = False, config: dict = None):
+    def __init__(self, debug_mode: bool = False, config: Optional[dict] = None) -> None:
         self.config = config or {}
         self.viewing_distance_cm = float(self.config.get("Viewing Distance (cm)", 30.0))
         self.screen_width_cm = float(self.config.get("Screen Width (cm)", 53.0))
@@ -1005,11 +1011,13 @@ class ClassicLoomingParadigm(BaseParadigm):
 
 
 class OpticFlowParadigm(BaseParadigm):
+    """Full-field optic flow starfield stimulus paradigm."""
+
     EXPERIMENT_PATTERNS = {
         "Optic Flow": "optic_flow",
     }
 
-    def __init__(self, debug_mode: bool = False, config: dict = None):
+    def __init__(self, debug_mode: bool = False, config: Optional[dict] = None) -> None:
         self.config = config or {}
         self.speed = float(
             self.config.get("Speed (deg/s)", self._schema_default("Speed (deg/s)"))
@@ -1310,11 +1318,13 @@ class OpticFlowParadigm(BaseParadigm):
 
 
 class MovementTraceParadigm(BaseParadigm):
+    """Lissajous curve dot-motion and kinematic tracking stimulus paradigm."""
+
     EXPERIMENT_PATTERNS = {
         "Movement Trace": "movement_trace",
     }
 
-    def __init__(self, debug_mode: bool = False, config: dict = None):
+    def __init__(self, debug_mode: bool = False, config: Optional[dict] = None) -> None:
         self.config = config or {}
         self.freq_x = float(self.config.get("Freq X", self._schema_default("Freq X")))
         self.freq_y = float(self.config.get("Freq Y", self._schema_default("Freq Y")))
@@ -1546,11 +1556,13 @@ class MovementTraceParadigm(BaseParadigm):
 
 
 class BlankParadigm(BaseParadigm):
+    """Blank control paradigm without visual stimuli for baseline kinematic recording."""
+
     EXPERIMENT_PATTERNS = {
         "Blank Tracking (No Stimulus)": "blank_tracking",
     }
 
-    def __init__(self, debug_mode: bool = False, config: dict = None):
+    def __init__(self, debug_mode: bool = False, config: Optional[dict] = None) -> None:
         self.config = config or {}
         self.trial_duration = float(
             self.config.get(
@@ -1669,12 +1681,14 @@ class BlankParadigm(BaseParadigm):
 
 
 class GratingParadigm(BaseParadigm):
+    """Static or drifting sinusoidal grating visual stimulus paradigm."""
+
     EXPERIMENT_PATTERNS = {
         "Static Grating": "static_grating",
         "Drifting Grating": "drifting_grating",
     }
 
-    def __init__(self, debug_mode: bool = False, config: dict = None):
+    def __init__(self, debug_mode: bool = False, config: Optional[dict] = None) -> None:
         self.config = config or {}
         self.sf = float(
             self.config.get(
@@ -2046,6 +2060,8 @@ class GratingParadigm(BaseParadigm):
 
 
 class SingleLoomingParadigm(BaseParadigm):
+    """Single screen centered looming disc stimulus paradigm."""
+
     EXPERIMENT_PATTERNS = {
         "Baseline Visual": {
             "type": "baseline_visual",
@@ -2094,7 +2110,7 @@ class SingleLoomingParadigm(BaseParadigm):
         },
     }
 
-    def __init__(self, debug_mode: bool = False, config: dict = None):
+    def __init__(self, debug_mode: bool = False, config: Optional[dict] = None) -> None:
         self.config = config or {}
         self.viewing_distance_cm = float(self.config.get("Viewing Distance (cm)", 30.0))
         self.screen_width_cm = float(self.config.get("Screen Width (cm)", 53.0))
@@ -2354,11 +2370,13 @@ class SingleLoomingParadigm(BaseParadigm):
 
 
 class WindParadigm(BaseParadigm):
+    """Pure tactile wind stimulus paradigm without visual stimulus rendering."""
+
     EXPERIMENT_PATTERNS = {
         "Wind Only": "wind_only",
     }
 
-    def __init__(self, debug_mode: bool = False, config: dict = None):
+    def __init__(self, debug_mode: bool = False, config: Optional[dict] = None) -> None:
         self.config = config or {}
         self.min_delay = float(
             self.config.get("Min Delay (s)", self._schema_default("Min Delay (s)"))

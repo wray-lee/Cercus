@@ -99,7 +99,7 @@ class ExperimentController:
     No UI widgets — state is read by the UI layer (NiceGUI pages).
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Worker state
         self.worker_process: Optional[mp.Process] = None
         self.cmd_queue: Optional[mp.Queue] = None
@@ -315,7 +315,7 @@ class ExperimentController:
     def worker_alive(self) -> bool:
         return self.worker_process is not None and self.worker_process.is_alive()
 
-    def start_experiment(self, config: dict):
+    def start_experiment(self, config: dict) -> None:
         """Spawn stimulus worker with the given config."""
         if self.worker_alive:
             return
@@ -332,7 +332,7 @@ class ExperimentController:
         )
         self.worker_process.start()
 
-    def stop_experiment(self):
+    def stop_experiment(self) -> None:
         """Send POISON_PILL to the stimulus worker."""
         if self.cmd_queue:
             try:
@@ -341,7 +341,7 @@ class ExperimentController:
                 # Queue full or broken — force-kill as fallback
                 self._kill_worker(self.worker_process)
 
-    def cleanup_worker(self):
+    def cleanup_worker(self) -> None:
         """Clean up after worker dies. Call when poll_telemetry reports worker_died."""
         self._close_queues()
         self._kill_worker(self.worker_process)
@@ -368,7 +368,7 @@ class ExperimentController:
             pass
         return None
 
-    def save_calibration_matrix(self, matrix: list, path: Optional[str] = None):
+    def save_calibration_matrix(self, matrix: list, path: Optional[str] = None) -> None:
         """Save matrix to disk and store in memory."""
         self.calib_matrix = matrix
         if path is None:

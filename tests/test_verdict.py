@@ -17,7 +17,7 @@ def _make_engine(**overrides) -> KinematicEngine:
     return eng
 
 
-def test_zero_motion_yields_no_response():
+def test_zero_motion_yields_no_response() -> None:
     eng = _make_engine(cum_disp=0.0, cum_dz=0.0, move_speed=0.0)
     paradigm = LoomingParadigm(debug_mode=True)
     result = paradigm.classify_response(eng, {"screen_side": "left"}, 8.0)
@@ -27,7 +27,7 @@ def test_zero_motion_yields_no_response():
     assert "peak_speed" in result
 
 
-def test_high_displacement_yields_escape():
+def test_high_displacement_yields_escape() -> None:
     eng = _make_engine(cum_disp=18.3, cum_dz=2.0, move_speed=45.0)
     paradigm = LoomingParadigm(debug_mode=True)
     result = paradigm.classify_response(eng, {"screen_side": "left"}, 8.0)
@@ -35,7 +35,7 @@ def test_high_displacement_yields_escape():
     assert result["cum_disp"] == 18.3
 
 
-def test_high_angle_yields_escape():
+def test_high_angle_yields_escape() -> None:
     eng = _make_engine(cum_disp=1.0, cum_dz=35.0, move_speed=10.0)
     paradigm = LoomingParadigm(debug_mode=True)
     result = paradigm.classify_response(eng, {"screen_side": "right"}, 8.0)
@@ -43,21 +43,21 @@ def test_high_angle_yields_escape():
     assert result["cum_dz"] == 35.0
 
 
-def test_moderate_displacement_yields_startle():
+def test_moderate_displacement_yields_startle() -> None:
     eng = _make_engine(cum_disp=8.0, cum_dz=3.0, move_speed=20.0)
     paradigm = LoomingParadigm(debug_mode=True)
     result = paradigm.classify_response(eng, {"screen_side": "left"}, 8.0)
     assert result["response"] == "startle"
 
 
-def test_moderate_angle_yields_startle():
+def test_moderate_angle_yields_startle() -> None:
     eng = _make_engine(cum_disp=2.0, cum_dz=15.0, move_speed=10.0)
     paradigm = LoomingParadigm(debug_mode=True)
     result = paradigm.classify_response(eng, {"screen_side": "right"}, 8.0)
     assert result["response"] == "startle"
 
 
-def test_negative_angle_uses_absolute_value():
+def test_negative_angle_uses_absolute_value() -> None:
     """cum_dz can be negative (turned left). Classification uses |cum_dz|."""
     eng = _make_engine(cum_disp=1.0, cum_dz=-35.0, move_speed=5.0)
     paradigm = LoomingParadigm(debug_mode=True)
@@ -66,7 +66,7 @@ def test_negative_angle_uses_absolute_value():
     assert result["cum_dz"] == 35.0  # absolute value in output
 
 
-def test_base_paradigm_default_works_on_any_paradigm():
+def test_base_paradigm_default_works_on_any_paradigm() -> None:
     """classify_response is inherited — non-looming paradigms get the default."""
     from src.models.paradigm import BlankParadigm
     eng = _make_engine(cum_disp=20.0, cum_dz=5.0, move_speed=30.0)
@@ -76,7 +76,7 @@ def test_base_paradigm_default_works_on_any_paradigm():
     assert set(result.keys()) == {"response", "cum_disp", "cum_dz", "peak_speed"}
 
 
-def test_peak_move_speed_used_in_verdict():
+def test_peak_move_speed_used_in_verdict() -> None:
     """classify_response uses engine.effective_speed (peak when > 0)."""
     eng = _make_engine(cum_disp=0.0, cum_dz=0.0, move_speed=0.0, peak_move_speed=120.0)
     paradigm = LoomingParadigm(debug_mode=True)

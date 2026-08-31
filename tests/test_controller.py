@@ -29,7 +29,7 @@ def _base_form() -> dict:
     }
 
 
-def test_build_config_returns_all_fixed_keys():
+def test_build_config_returns_all_fixed_keys() -> None:
     cfg = ExperimentController.build_config(_base_form())
     expected_keys = {
         "Subject ID", "Session Number", "Total Sessions",
@@ -42,14 +42,14 @@ def test_build_config_returns_all_fixed_keys():
     assert expected_keys.issubset(cfg.keys())
 
 
-def test_build_config_subject_id():
+def test_build_config_subject_id() -> None:
     form = _base_form()
     form["subject_id"] = "  my_cricket  "
     cfg = ExperimentController.build_config(form)
     assert cfg["Subject ID"] == "my_cricket"
 
 
-def test_build_config_resolution_parsing():
+def test_build_config_resolution_parsing() -> None:
     form = _base_form()
     form["resolution"] = "1920, 1080"
     cfg = ExperimentController.build_config(form)
@@ -57,7 +57,7 @@ def test_build_config_resolution_parsing():
     assert cfg["Screen Height (px)"] == 1080
 
 
-def test_build_config_resolution_single_value():
+def test_build_config_resolution_single_value() -> None:
     form = _base_form()
     form["resolution"] = "2560"
     cfg = ExperimentController.build_config(form)
@@ -65,14 +65,14 @@ def test_build_config_resolution_single_value():
     assert cfg["Screen Height (px)"] == 1080  # default
 
 
-def test_build_config_manual_mode_sets_total_minus_one():
+def test_build_config_manual_mode_sets_total_minus_one() -> None:
     form = _base_form()
     form["paradigm_params"] = {"Execution Mode": "Manual"}
     cfg = ExperimentController.build_config(form)
     assert cfg["Total Sessions"] == -1
 
 
-def test_build_config_auto_mode_uses_session_total():
+def test_build_config_auto_mode_uses_session_total() -> None:
     form = _base_form()
     form["session_total"] = "10"
     form["paradigm_params"] = {"Execution Mode": "Auto"}
@@ -80,7 +80,7 @@ def test_build_config_auto_mode_uses_session_total():
     assert cfg["Total Sessions"] == 10
 
 
-def test_build_config_merges_paradigm_params():
+def test_build_config_merges_paradigm_params() -> None:
     form = _base_form()
     form["paradigm_params"] = {"Speed (deg/s)": 42.0, "Size (deg)": 10.0}
     cfg = ExperimentController.build_config(form)
@@ -88,26 +88,26 @@ def test_build_config_merges_paradigm_params():
     assert cfg["Size (deg)"] == 10.0
 
 
-def test_build_config_output_dir_exists():
+def test_build_config_output_dir_exists() -> None:
     cfg = ExperimentController.build_config(_base_form())
     assert os.path.isdir(cfg["_output_dir"])
 
 
-def test_build_config_safe_int_fallback():
+def test_build_config_safe_int_fallback() -> None:
     form = _base_form()
     form["session_start"] = "not_a_number"
     cfg = ExperimentController.build_config(form)
     assert cfg["Session Number"] == 1  # default fallback
 
 
-def test_build_config_safe_float_fallback():
+def test_build_config_safe_float_fallback() -> None:
     form = _base_form()
     form["viewing_distance_cm"] = "bad"
     cfg = ExperimentController.build_config(form)
     assert cfg["Viewing Distance (cm)"] == 30.0  # default fallback
 
 
-def test_safe_int_with_int_and_float():
+def test_safe_int_with_int_and_float() -> None:
     from src.ui.controller import _safe_int
     assert _safe_int(10, 1) == 10
     assert _safe_int(10.5, 1) == 10
@@ -115,7 +115,7 @@ def test_safe_int_with_int_and_float():
     assert _safe_int("invalid", 1) == 1
 
 
-def test_safe_int_nan_inf_fallback():
+def test_safe_int_nan_inf_fallback() -> None:
     """_safe_int must not crash on float('nan') or float('inf')."""
     from src.ui.controller import _safe_int
     assert _safe_int(float('nan'), 99) == 99
@@ -123,14 +123,14 @@ def test_safe_int_nan_inf_fallback():
     assert _safe_int(float('-inf'), 99) == 99
 
 
-def test_safe_int_bool_returns_default():
+def test_safe_int_bool_returns_default() -> None:
     """_safe_int should not coerce True/False to 1/0."""
     from src.ui.controller import _safe_int
     assert _safe_int(True, 42) == 42
     assert _safe_int(False, 42) == 42
 
 
-def test_safe_float_with_various_inputs():
+def test_safe_float_with_various_inputs() -> None:
     """_safe_float must handle bool, nan, inf, valid string, invalid string."""
     from src.ui.controller import _safe_float
     assert _safe_float("3.14", 10.0) == 3.14
@@ -142,7 +142,7 @@ def test_safe_float_with_various_inputs():
     assert _safe_float(float('-inf'), 10.0) == 10.0
 
 
-def test_coerce_params_nan_and_inf():
+def test_coerce_params_nan_and_inf() -> None:
     from src.ui.controller import _coerce_params
     schema = {
         "int_param": {"type": "int", "default": 10, "min": 0, "max": 100},
@@ -157,7 +157,7 @@ def test_coerce_params_nan_and_inf():
     assert res["float_param"] == 5.5
 
 
-def test_global_poll_terminal_status_protection(monkeypatch):
+def test_global_poll_terminal_status_protection(monkeypatch: pytest.MonkeyPatch) -> None:
     from src.ui.app import _global_poll, controller, state
 
     # Reset controller & state
@@ -179,7 +179,7 @@ def test_global_poll_terminal_status_protection(monkeypatch):
     assert state.worker_status == "worker_done"
 
 
-def test_global_poll_terminal_before_worker_died(monkeypatch):
+def test_global_poll_terminal_before_worker_died(monkeypatch: pytest.MonkeyPatch) -> None:
     from src.ui.app import _global_poll, controller, state
 
     controller.terminal_status = None

@@ -14,7 +14,7 @@ from src.models.paradigm import PARADIGM_REGISTRY, schema_condition_met
 log = logging.getLogger(__name__)
 
 
-def config_panel(on_paradigm_change=None) -> tuple:
+def config_panel(on_paradigm_change: Any = None) -> tuple:
     """Build the config panel. Returns (container, get_form_values callable)."""
     form_values: Dict[str, Any] = {}
     param_container = None
@@ -125,7 +125,7 @@ def config_panel(on_paradigm_change=None) -> tuple:
             )
         return ui.input(label, value=str(value)).props('dense outlined').classes('w-full')
 
-    def rebuild_params(p_name=None, _defer=False):
+    def rebuild_params(p_name: Any = None, _defer: bool = False) -> None:
         p_name = p_name or paradigm_select.value
         p_cls = PARADIGM_REGISTRY.get(p_name)
         if not p_cls:

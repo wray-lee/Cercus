@@ -1,7 +1,7 @@
 import queue
 import threading
 import time
-from typing import List, Tuple, Callable, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 try:
     import serial
@@ -13,6 +13,8 @@ except ImportError:
 
 
 class KinematicsParser:
+    """Parser and calibrator for raw serial kinematics telemetry frames."""
+
     _DEFAULT_SCHEMA = [
         (0, 0, "ard_time"),
         (1, 0, "dx"),
@@ -23,7 +25,11 @@ class KinematicsParser:
 
     _IDENTITY_MATRIX = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
 
-    def __init__(self, telemetry_schema: list = None, calib_factors: dict = None):
+    def __init__(
+        self,
+        telemetry_schema: Optional[List[Tuple[int, int, str]]] = None,
+        calib_factors: Optional[Dict[str, float]] = None,
+    ) -> None:
         self._field_defs = telemetry_schema or self._DEFAULT_SCHEMA
         self._calib_factors = calib_factors or {"dx": 1.0, "dy": 1.0, "dz": 1.0}
         self._calib_matrix = [row[:] for row in self._IDENTITY_MATRIX]
@@ -47,7 +53,7 @@ class KinematicsParser:
         """Public accessor for field key names (zero-allocation: precomputed tuple)."""
         return self._field_keys
 
-    def get_headers(self) -> list:
+    def get_headers(self) -> List[str]:
         return ["sys_time"] + [h for _, _, h in self._field_defs] + ["global_trial_id"]
 
     @staticmethod
@@ -120,10 +126,10 @@ class KinematicsParser:
                     out[idx] = float(val) * factor
         return out
 
-    def set_calib_factors(self, factors: dict):
+    def set_calib_factors(self, factors: Dict[str, float]) -> None:
         self._calib_factors.update(factors)
 
-    def set_calib_matrix(self, matrix: list):
+    def set_calib_matrix(self, matrix: List[List[float]]) -> None:
         """Set the 3x3 decoupling calibration matrix.
 
         Args:
@@ -132,7 +138,7 @@ class KinematicsParser:
         """
         self._calib_matrix = [row[:] for row in matrix]
 
-    def parse(self, sys_time: float, raw: str, g_id: int):
+    def parse(self, sys_time: float, raw: str, g_id: int) -> Optional[List[Any]]:
         raw = raw.strip()
         if not raw:
             return None
@@ -142,7 +148,7 @@ class KinematicsParser:
         fields = self._apply_calibration(fields)
         return [f"{sys_time:.6f}"] + fields + [g_id]
 
-    def get_telemetry(self, raw: str):
+    def get_telemetry(self, raw: str) -> Optional[Dict[str, Any]]:
         raw = raw.strip()
         if not raw:
             return None
@@ -155,7 +161,9 @@ class KinematicsParser:
 
 
 class SerialDaemon:
-    def __init__(self, port: str, baudrate: int = 115200, timeout: float = 0.05):
+    """Serial communication daemon managing background read and write threads."""
+
+    def __init__(self, port: str, baudrate: int = 115200, timeout: float = 0.05) -> None:
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
@@ -166,8 +174,10 @@ class SerialDaemon:
         self._clock_offset: float = 0.0
         self._rx_buf: str = ""
         self._flush_event = threading.Event()
+        self._reader_thread: Optional[threading.Thread] = None
+        self._writer_thread: Optional[threading.Thread] = None
 
-    def start(self, time_func: Callable[[], float]):
+    def start(self, time_func: Callable[[], float]) -> None:
         if time_func is None:
             raise ValueError("time_func is required — must be bound to core.Clock().getTime")
         # Compute clock offset once so threads use perf_counter without GIL contention
@@ -188,8 +198,10 @@ class SerialDaemon:
                 self._serial.reset_input_buffer()
                 self._running = True
                 self._rx_buf = ""
-                threading.Thread(target=self._reader_loop, daemon=True).start()
-                threading.Thread(target=self._writer_loop, daemon=True).start()
+                self._reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
+                self._writer_thread = threading.Thread(target=self._writer_loop, daemon=True)
+                self._reader_thread.start()
+                self._writer_thread.start()
                 return
             except Exception as e:
                 last_err = e
@@ -264,7 +276,7 @@ class SerialDaemon:
             except Exception:
                 pass
 
-    def send_command(self, cmd: Union[str, bytes]):
+    def send_command(self, cmd: Union[str, bytes]) -> None:
         try:
             self.tx_queue.put_nowait(cmd)
         except queue.Full:
@@ -279,7 +291,7 @@ class SerialDaemon:
                 break
         return items
 
-    def flush_input(self):
+    def flush_input(self) -> None:
         """Discard all buffered serial data and pending queue items."""
         # Signal reader thread to clear its local rx_buf
         self._flush_event.set()
@@ -294,9 +306,12 @@ class SerialDaemon:
     def is_alive(self) -> bool:
         return self._running
 
-    def stop(self):
+    def stop(self) -> None:
         self._running = False
-        time.sleep(self.timeout + 0.05)
+        if self._reader_thread and self._reader_thread.is_alive():
+            self._reader_thread.join(timeout=self.timeout + 0.1)
+        if self._writer_thread and self._writer_thread.is_alive():
+            self._writer_thread.join(timeout=0.1)
         # Drain pending TX commands
         while not self.tx_queue.empty():
             try:
@@ -308,19 +323,27 @@ class SerialDaemon:
 
 
 class MockSerialDaemon:
-    def __init__(self):
+    """Mock serial daemon for simulation and headless testing."""
+
+    def __init__(self) -> None:
         self.data_queue = queue.Queue(maxsize=8192)
         self._running = False
         self._clock_offset: float = 0.0
         self._mock_generator = None
+        self._mock_thread: Optional[threading.Thread] = None
 
-    def start(self, time_func: Callable[[], float], mock_generator: Callable[[int], str] = None):
+    def start(
+        self,
+        time_func: Callable[[], float],
+        mock_generator: Optional[Callable[[int], str]] = None,
+    ) -> None:
         if time_func is None:
             raise ValueError("time_func is required — must be bound to core.Clock().getTime")
         self._clock_offset = time_func() - time.perf_counter()
         self._mock_generator = mock_generator
         self._running = True
-        threading.Thread(target=self._mock_loop, daemon=True).start()
+        self._mock_thread = threading.Thread(target=self._mock_loop, daemon=True)
+        self._mock_thread.start()
 
     def _mock_loop(self):
         t_ard = 0
@@ -340,10 +363,10 @@ class MockSerialDaemon:
             time.sleep(max(0, next_tick - time.perf_counter()))
             next_tick += period
 
-    def send_command(self, cmd: Union[str, bytes]):
+    def send_command(self, cmd: Union[str, bytes]) -> None:
         pass
 
-    def drain_queue(self) -> List[Tuple]:
+    def drain_queue(self) -> List[Tuple[float, str]]:
         items = []
         while not self.data_queue.empty():
             try:
@@ -352,16 +375,18 @@ class MockSerialDaemon:
                 break
         return items
 
-    def flush_input(self):
-            """丢弃模拟队列中尚未处理的数据"""
-            while not self.data_queue.empty():
-                try:
-                    self.data_queue.get_nowait()
-                except queue.Empty:
-                    break
+    def flush_input(self) -> None:
+        """Discard simulated queued telemetry data."""
+        while not self.data_queue.empty():
+            try:
+                self.data_queue.get_nowait()
+            except queue.Empty:
+                break
 
     def is_alive(self) -> bool:
         return self._running
 
-    def stop(self):
+    def stop(self) -> None:
         self._running = False
+        if self._mock_thread and self._mock_thread.is_alive():
+            self._mock_thread.join(timeout=0.2)

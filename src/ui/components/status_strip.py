@@ -1,4 +1,5 @@
 """Shared status strip + tick loop — used by both dashboard and monitor."""
+from typing import Any, Callable, Dict, Optional
 from nicegui import ui
 
 from src.ui.components.common import (
@@ -36,7 +37,7 @@ def _make_trial_bar(current, total):
     return f'<div style="display:flex;gap:1px;width:100%;">{" ".join(segs)}</div>'
 
 
-def build_status_strip(*, show_subject=False):
+def build_status_strip(*, show_subject: bool = False) -> Dict[str, Any]:
     """Build the status strip row and return a dict of widget references.
 
     Parameters
@@ -91,8 +92,14 @@ def build_status_strip(*, show_subject=False):
     return widgets
 
 
-def create_tick(state, controller, widgets, *,
-                extra_components=None, favicon_fn=None):
+def create_tick(
+    state: Any,
+    controller: Any,
+    widgets: Dict[str, Any],
+    *,
+    extra_components: Optional[Dict[str, Any]] = None,
+    favicon_fn: Optional[Callable[[bool], None]] = None,
+) -> Callable[[], None]:
     """Create the optimized tick function with cache-based DOM updates.
 
     Parameters
@@ -115,7 +122,7 @@ def create_tick(state, controller, widgets, *,
     _n = {'n': 0}
     _cache = {}
 
-    def tick():
+    def tick() -> None:
         _n['n'] += 1
         n = _n['n']
 

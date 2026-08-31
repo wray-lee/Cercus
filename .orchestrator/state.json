@@ -1,0 +1,19 @@
+{
+  "task_goal": "全项目工程严谨性审查",
+  "phase": "PHASE_1",
+  "base_branch": "main",
+  "ticket_dag": {
+    "T1": {"id": "T1", "title": "Code Standards Compliance Audit", "blocking_deps": [], "complexity_score": 2, "affected_files": ["src/core/kinematics.py", "src/core/hardware.py", "src/core/render.py", "src/core/logger.py", "src/models/paradigm.py", "src/ui/controller.py", "src/ui/state.py", "src/workers/stimulus_worker.py", "scripts/audit_standards.py"], "validation_cmd": "python scripts/audit_standards.py && pytest -x"},
+    "T2": {"id": "T2", "title": "Architectural Boundary Enforcement - Process Isolation", "blocking_deps": [], "complexity_score": 3, "affected_files": ["src/ui/app.py", "src/ui/controller.py", "src/workers/stimulus_worker.py", "src/workers/calibration_worker.py", "scripts/audit_boundaries.py"], "validation_cmd": "python scripts/audit_boundaries.py --check process-isolation"},
+    "T3": {"id": "T3", "title": "Architectural Boundary Enforcement - Renderer Statelessness", "blocking_deps": ["T2"], "complexity_score": 2, "affected_files": ["src/core/render.py", "tests/test_render.py", "scripts/audit_boundaries.py"], "validation_cmd": "python scripts/audit_boundaries.py --check renderer-stateless && pytest tests/test_render.py -xvs"},
+    "T4": {"id": "T4", "title": "Zero-Allocation Hot Path Verification", "blocking_deps": ["T2"], "complexity_score": 4, "affected_files": ["src/core/kinematics.py", "src/workers/stimulus_worker.py", "tests/test_allocation_audit.py", "scripts/audit_allocations.py"], "validation_cmd": "python scripts/audit_allocations.py && pytest tests/test_allocation_audit.py -xvs"},
+    "T5": {"id": "T5", "title": "Test Coverage Audit for Critical Paths", "blocking_deps": ["T4"], "complexity_score": 3, "affected_files": ["tests/test_kinematics.py", "tests/test_hardware.py", "tests/test_stimulus_worker.py", "scripts/coverage_report.py"], "validation_cmd": "pytest --cov=src.core.kinematics --cov=src.core.hardware --cov=src.workers.stimulus_worker --cov-report=term-missing --cov-fail-under=75"},
+    "T6": {"id": "T6", "title": "Concurrency & Thread Safety Audit", "blocking_deps": ["T2"], "complexity_score": 4, "affected_files": ["src/core/hardware.py", "src/workers/stimulus_worker.py", "src/ui/app.py", "tests/test_concurrency_safety.py", "scripts/audit_concurrency.py"], "validation_cmd": "python scripts/audit_concurrency.py && pytest tests/test_concurrency_safety.py -xvs"},
+    "T7": {"id": "T7", "title": "Documentation-Code Alignment Audit", "blocking_deps": ["T1"], "complexity_score": 2, "affected_files": ["CONTEXT.md", "BOUNDARY.md", "docs/adr/", "scripts/audit_docs.py"], "validation_cmd": "python scripts/audit_docs.py"},
+    "T8": {"id": "T8", "title": "Synthetic Experiment Integration Test", "blocking_deps": ["T4", "T5", "T6"], "complexity_score": 5, "affected_files": ["scripts/synthetic_experiment.py", "src/workers/stimulus_worker.py", "src/core/hardware.py"], "validation_cmd": "python scripts/synthetic_experiment.py --trials=100 --profile"}
+  },
+  "completed_tickets": [],
+  "active_tickets": {},
+  "snapshot_scores": {},
+  "context_md_hash": "verified"
+}

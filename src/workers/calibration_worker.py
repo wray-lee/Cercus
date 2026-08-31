@@ -3,19 +3,24 @@ import math
 import multiprocessing as mp
 import queue
 import signal
+import threading
 import time
-from typing import Dict, Any
+from typing import Any, Dict
 
-from src.core.hardware import SerialDaemon, MockSerialDaemon
+from src.core.hardware import MockSerialDaemon, SerialDaemon
 
 logger = logging.getLogger(__name__)
 
 
-def _term_handler(signum, frame):
-    raise SystemExit(f"Received signal {signum}")
+_shutdown_event = threading.Event()
 
 
-def calibration_worker_entry(config: dict, cmd_q: mp.Queue, telemetry_q: mp.Queue):
+def _term_handler(signum: int, frame: Any) -> None:
+    _shutdown_event.set()
+
+
+def calibration_worker_entry(config: dict, cmd_q: mp.Queue, telemetry_q: mp.Queue) -> None:
+    _shutdown_event.clear()
     signal.signal(signal.SIGTERM, _term_handler)
     signal.signal(signal.SIGINT, _term_handler)
     CalibrationWorker(config, cmd_q, telemetry_q).run()
@@ -42,7 +47,7 @@ class CalibrationWorker:
 
     NOISE_THRESHOLD = 0  # no deadband: accumulate all raw deltas
 
-    def __init__(self, config: Dict[str, Any], cmd_q: mp.Queue, telemetry_q: mp.Queue):
+    def __init__(self, config: Dict[str, Any], cmd_q: mp.Queue, telemetry_q: mp.Queue) -> None:
         self.config = config
         self.cmd_queue = cmd_q
         self.telemetry_queue = telemetry_q
@@ -62,6 +67,13 @@ class CalibrationWorker:
             pass
 
     def _poll_commands(self):
+        if _shutdown_event.is_set():
+            self._abort = True
+
+        parent = mp.parent_process()
+        if parent is not None and not parent.is_alive():
+            self._abort = True
+
         try:
             while not self.cmd_queue.empty():
                 cmd = self.cmd_queue.get_nowait()
@@ -93,7 +105,7 @@ class CalibrationWorker:
         except (queue.Empty, ValueError):
             pass
 
-    def run(self):
+    def run(self) -> None:
         hw_daemon = None
         try:
             sp = self.config.get("Serial Port", "mock")

@@ -18,7 +18,7 @@ Cercus is a high-precision Python framework for insect (cricket) behavioral para
 | **Trial / Session** | **Trial**: A single stimulus execution unit with target parameters (e.g., TTC, wind angle). **Session**: A collection of randomized trials separated by ITI (Inter-Trial Interval, 60–90s) and ISI (Inter-Session Interval, 5–10min). |
 | **Kinematics / KinematicEngine** | High-frequency engine in `kinematics.py` evaluating movement triggers and tracking insect velocity with zero GC allocations in hot paths. |
 | **Hardware / SerialDaemon** | Arduino Mega 2560 interface (`hardware.py`) controlling solenoid valves and reading optical mouse sensor frames non-blockingly via background daemon threads. |
-| **CoreRenderer** | Pure stateless visual drawing engine (`render.py`) mapping geometry objects to Pygame surfaces. |
+| **CoreRenderer** | Pure stateless visual drawing engine (`render.py`) mapping geometry objects to PsychoPy window operations. |
 | **Worker Process** | Multi-processing worker node (`stimulus_worker.py`, `calibration_worker.py`) executing trial logic in an isolated process away from the main UI thread. |
 | **ExperimentController** | Pure Python class (`src/ui/controller.py`) managing worker lifecycle, config building, queue communication, and calibration matrix I/O. No UI framework dependency. |
 | **AppState** | Reactive state object (`src/ui/state.py`) updated by a single global timer from the telemetry queue. All UI pages read from this shared object. |
@@ -45,7 +45,7 @@ Cercus is a high-precision Python framework for insect (cricket) behavioral para
 |   ├── SerialDaemon (Background I/O threads to Arduino)                |
 |   ├── KinematicEngine (Zero-allocation hot loop)                      |
 |   ├── BaseParadigm Subclass (State & Trial logic)                     |
-|   └── CoreRenderer (Stateless Pygame drawing)                         |
+|   └── CoreRenderer (Stateless PsychoPy drawing)                       |
 +-----------------------------------------------------------------------+
 ```
 

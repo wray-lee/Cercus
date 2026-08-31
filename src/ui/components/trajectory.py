@@ -1,12 +1,13 @@
 """Trajectory canvas — NiceGUI component wrapping HTML5 Canvas."""
 import json
 from pathlib import Path
+from typing import Any
 from nicegui import ui
 
 _JS_TEXT = (Path(__file__).parent / 'trajectory.js').read_text(encoding='utf-8')
 
 
-def trajectory_canvas(state) -> ui.element:
+def trajectory_canvas(state: Any) -> ui.element:
     """Create a trajectory canvas element bound to AppState.
 
     The canvas uses CSS aspect-ratio:1 matching the v1.0.0 virtual
@@ -31,7 +32,7 @@ def trajectory_canvas(state) -> ui.element:
     # Python-side signature cache to avoid redundant WebSocket sends
     _last_sig = {'sig': None}
 
-    async def update():
+    async def update() -> None:
         bbox = state.trail_bbox
         pts = state.trail_points[-1000:]
         angle = state.trail_angle

@@ -1,7 +1,8 @@
 """Shared UI helpers used by both dashboard and monitor pages."""
+from typing import Any
 
 
-def fmt_val(v):
+def fmt_val(v: Any) -> str:
     """Format a telemetry value for display."""
     if v is None:
         return '—'
@@ -40,14 +41,14 @@ WORKER_COLORS = {
 }
 
 
-def color_pill(pill, color_name):
+def color_pill(pill: Any, color_name: str) -> None:
     cls = COLOR_MAP.get(color_name, 'bg-[#2E2E2A]')
     # Dark text on bright pills, light text on dark pills
     text_cls = 'text-[#111110]' if color_name not in ('gray',) else 'text-[#807D75]'
     pill.classes(replace=f'mono text-[10px] font-bold px-2 py-0.5 rounded-full {cls} {text_cls}')
 
 
-def update_worker_badge(badge, status, error):
+def update_worker_badge(badge: Any, status: str, error: str) -> None:
     bg, label = WORKER_COLORS.get(status, WORKER_COLORS['idle'])
     text = label + (f' · {error}' if error else '')
     badge.text = text
@@ -63,7 +64,7 @@ _TERMINAL_TEXT = {
 }
 
 
-def update_status_label(label, state, controller):
+def update_status_label(label: Any, state: Any, controller: Any) -> None:
     """Set status label text + color from shared state. Used by both pages."""
     # Use controller.terminal_status directly — state.worker_died is transient (16ms)
     if controller.terminal_status:

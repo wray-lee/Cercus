@@ -3,13 +3,15 @@ import json
 import os
 import queue
 import threading
-from typing import List
+from typing import Any, List
 
 import numpy as np
 
 
 class NumpyEncoder(json.JSONEncoder):
-    def default(self, obj):
+    """JSON encoder that converts numpy types to standard Python primitives."""
+
+    def default(self, obj: Any) -> Any:
         if isinstance(obj, np.integer):
             return int(obj)
         if isinstance(obj, np.floating):
@@ -20,6 +22,8 @@ class NumpyEncoder(json.JSONEncoder):
 
 
 class GroundTruthLogger:
+    """Asynchronous ground-truth event and kinematics CSV logger."""
+
     EVENT_COLUMNS = [
         "event_name",
         "timestamp",
@@ -29,7 +33,7 @@ class GroundTruthLogger:
         "details",
     ]
 
-    def __init__(self, output_dir: str):
+    def __init__(self, output_dir: str) -> None:
         self.out = output_dir
         os.makedirs(self.out, exist_ok=True)
         self.global_trial_id = self._load_cache()
@@ -141,7 +145,7 @@ class GroundTruthLogger:
     # Public API – all callers stay on the main thread; I/O is queued
     # ------------------------------------------------------------------
 
-    def open_session(self, subject_id: str, session_num: int, kin_headers: list):
+    def open_session(self, subject_id: str, session_num: int, kin_headers: List[str]) -> None:
         self.session_num = session_num
         self.trial_in_session = 0
         self._session_open = True
@@ -150,7 +154,7 @@ class GroundTruthLogger:
     def is_open(self) -> bool:
         return self._session_open
 
-    def close(self):
+    def close(self) -> None:
         """Flush pending writes and close current session files (thread stays alive)."""
         if self._session_open:
             self._session_open = False
@@ -158,18 +162,18 @@ class GroundTruthLogger:
             self._io_queue.put(("close", done))
             done.wait()
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         """Final shutdown: flush everything, stop writer thread, close files."""
         self.close()
         self._io_queue.put(None)  # poison pill
         self._writer_thread.join()
 
-    def advance_trial(self):
+    def advance_trial(self) -> None:
         self.trial_in_session += 1
         self.global_trial_id += 1
         self._io_queue.put(("save_cache", self.global_trial_id))
 
-    def log_event(self, event_name: str, timestamp: float, **details):
+    def log_event(self, event_name: str, timestamp: float, **details: Any) -> None:
         """Enqueue an event row.  Serialization is deferred to the I/O thread."""
         if not self._session_open:
             return
@@ -183,15 +187,15 @@ class GroundTruthLogger:
             details,  # raw dict — _io_loop will serialize
         )))
 
-    def log_kinematics_batch(self, items: List[list]):
+    def log_kinematics_batch(self, items: List[List[Any]]) -> None:
         if not self._session_open:
             return
         self._io_queue.put(("kin_rows", items))
 
-    def flush_kinematics(self):
+    def flush_kinematics(self) -> None:
         self._io_queue.put(("flush_kin", None))
 
-    def flush(self):
+    def flush(self) -> None:
         """Block until all prior queued writes are flushed to disk."""
         self._io_queue.put(("flush_event", None))
         self._io_queue.put(("flush_kin", None))

@@ -1,8 +1,9 @@
 """Calibration matrix display — load from json, show 3x3."""
+from typing import Any
 from nicegui import ui
 
 
-def calibration_panel(controller) -> ui.element:
+def calibration_panel(controller: Any) -> ui.element:
     """Compact calibration panel showing the 3x3 matrix (auto-loaded)."""
     with ui.card().classes('w-full') as panel:
         with ui.row().classes('items-center gap-2 mb-1'):
@@ -20,7 +21,7 @@ def calibration_panel(controller) -> ui.element:
             'color: var(--text-muted);'
         )
 
-    def refresh():
+    def refresh() -> None:
         _render_matrix(matrix_grid, controller.calib_matrix)
         if controller.calib_matrix:
             status_badge.text = 'LOADED'
@@ -40,7 +41,7 @@ def calibration_panel(controller) -> ui.element:
     return panel
 
 
-def calibration_display(controller) -> ui.element:
+def calibration_display(controller: Any) -> ui.element:
     """Read-only matrix display for /monitor."""
     with ui.card().classes('w-full') as card:
         with ui.row().classes('items-center gap-2 mb-1'):
@@ -53,7 +54,7 @@ def calibration_display(controller) -> ui.element:
             'grid grid-cols-3 gap-1 font-mono text-xs text-center'
         )
 
-    def refresh():
+    def refresh() -> None:
         _render_matrix(matrix_grid, controller.calib_matrix)
         if controller.calib_matrix:
             status_badge.text = 'LOADED'

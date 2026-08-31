@@ -1,4 +1,5 @@
 """Verdict table + summary — NiceGUI component."""
+from typing import Any
 from nicegui import ui
 
 # v1.0.0 response color mapping
@@ -9,7 +10,7 @@ _RESPONSE_COLORS = {
 }
 
 
-def verdict_table(state) -> ui.element:
+def verdict_table(state: Any) -> ui.element:
     """Create verdict table card bound to AppState."""
     with ui.card().classes('w-full') as card:
         with ui.row().classes('items-center gap-2 mb-1'):
@@ -37,7 +38,7 @@ def verdict_table(state) -> ui.element:
             </q-td>
         ''')
 
-    def refresh():
+    def refresh() -> None:
         rows = []
         for v in state.verdict_history:
             try:

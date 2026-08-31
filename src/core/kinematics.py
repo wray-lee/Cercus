@@ -42,7 +42,7 @@ class KinematicEngine:
         "_radius_mm",
     )
 
-    def __init__(self, error_callback: Optional[Callable[[str, str, object], None]] = None):
+    def __init__(self, error_callback: Optional[Callable[[str, str, object], None]] = None) -> None:
         self._error_cb = error_callback
         self._last_t = -1.0
         self._cum_dz = 0.0
@@ -111,7 +111,7 @@ class KinematicEngine:
     # Reset — call at each trial boundary
     # ------------------------------------------------------------------
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset all accumulators for a new trial."""
         self._last_t = -1.0
         self._cum_dz = 0.0
@@ -134,7 +134,7 @@ class KinematicEngine:
     # Update — called every frame with raw hardware telemetry
     # ------------------------------------------------------------------
 
-    def update(self, t: float, dx: float, dy: float, dz: float):
+    def update(self, t: float, dx: float, dy: float, dz: float) -> None:
         """Ingest one telemetry sample. All arithmetic is in-place on
         pre-allocated float slots — no objects are created.
 

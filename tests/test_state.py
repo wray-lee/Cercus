@@ -7,7 +7,7 @@ import pytest
 from src.ui.state import AppState
 
 
-def test_apply_telemetry_updates_phase():
+def test_apply_telemetry_updates_phase() -> None:
     s = AppState()
     s.apply({"telemetry": {"action": "telemetry", "phase": "ITI", "ui_color": "cyan",
              "session_num": 1, "trial_idx": 2, "total_trials": 10,
@@ -19,7 +19,7 @@ def test_apply_telemetry_updates_phase():
     assert s.trial_idx == 2
 
 
-def test_apply_verdict_appends():
+def test_apply_verdict_appends() -> None:
     s = AppState()
     s.apply({"telemetry": None, "terminal": None, "worker_died": False,
              "verdicts": [{"action": "trial_verdict", "trial_idx": 1,
@@ -29,7 +29,7 @@ def test_apply_verdict_appends():
     assert s.verdict_history[0]["response"] == "escape"
 
 
-def test_apply_verdict_counts():
+def test_apply_verdict_counts() -> None:
     s = AppState()
     s.apply({"telemetry": None, "terminal": None, "worker_died": False,
              "verdicts": [
@@ -41,7 +41,7 @@ def test_apply_verdict_counts():
     assert s.verdict_counts == {"escape": 2, "startle": 1, "no_response": 1}
 
 
-def test_apply_terminal_done():
+def test_apply_terminal_done() -> None:
     s = AppState()
     s.apply({"telemetry": None, "verdicts": [], "worker_died": False,
              "terminal": {"action": "worker_done"}})
@@ -49,7 +49,7 @@ def test_apply_terminal_done():
     assert s.worker_error == ""
 
 
-def test_apply_terminal_error():
+def test_apply_terminal_error() -> None:
     s = AppState()
     s.apply({"telemetry": None, "verdicts": [], "worker_died": False,
              "terminal": {"action": "worker_error", "error": "Serial timeout"}})
@@ -57,14 +57,14 @@ def test_apply_terminal_error():
     assert s.worker_error == "Serial timeout"
 
 
-def test_apply_worker_died():
+def test_apply_worker_died() -> None:
     s = AppState()
     s.apply({"telemetry": None, "verdicts": [], "terminal": None,
              "worker_died": True})
     assert s.worker_died is True
 
 
-def test_apply_session_change_clears_verdicts():
+def test_apply_session_change_clears_verdicts() -> None:
     s = AppState()
     s.apply({"telemetry": {"action": "telemetry", "phase": "ITI",
              "session_num": 1, "ui_metrics": {}},
@@ -79,7 +79,7 @@ def test_apply_session_change_clears_verdicts():
     assert s.verdict_counts == {"escape": 0, "startle": 0, "no_response": 0}
 
 
-def test_apply_trajectory_updates():
+def test_apply_trajectory_updates() -> None:
     s = AppState()
     s.apply({"telemetry": {"action": "telemetry", "phase": "Kinematic",
              "ui_metrics": {"pos_x": 5.0, "pos_y": 10.0, "k_angle": 30.0,
@@ -91,7 +91,7 @@ def test_apply_trajectory_updates():
     assert s.kinematic["k_angle"] == 30.0
 
 
-def test_apply_trajectory_monotonic_bbox():
+def test_apply_trajectory_monotonic_bbox() -> None:
     s = AppState()
     for x, y in [(0, 0), (10, 10), (5, 5)]:
         s.apply({"telemetry": {"action": "telemetry", "phase": "Kinematic",
@@ -100,7 +100,7 @@ def test_apply_trajectory_monotonic_bbox():
     assert s.trail_bbox == (0.0, 10.0, 0.0, 10.0)  # never shrinks
 
 
-def test_reset_clears_all():
+def test_reset_clears_all() -> None:
     s = AppState()
     s.apply({"telemetry": {"action": "telemetry", "phase": "ITI",
              "session_num": 1, "ui_metrics": {"pos_x": 1.0, "pos_y": 2.0}},
@@ -113,7 +113,7 @@ def test_reset_clears_all():
     assert s.worker_status == "idle"
 
 
-def test_apply_telemetry_handles_none_ui_metrics():
+def test_apply_telemetry_handles_none_ui_metrics() -> None:
     s = AppState()
     s.apply({"telemetry": {"action": "telemetry", "phase": "ITI", "ui_metrics": None},
              "verdicts": [], "terminal": None, "worker_died": False})

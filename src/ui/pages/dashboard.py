@@ -1,6 +1,8 @@
 """Dashboard page — /dashboard (token-gated, native window, full controls)."""
 from nicegui import ui
 
+from src.ui.controller import ExperimentController
+from src.ui.state import AppState
 from src.ui.components.titlebar import titlebar
 from src.ui.components.config_panel import config_panel
 from src.ui.components.calibration import calibration_panel
@@ -11,7 +13,7 @@ from src.ui.components.hw_status import hw_status_panel
 from src.ui.components.status_strip import build_status_strip, create_tick
 
 
-def build_dashboard(state, controller):
+def build_dashboard(state: AppState, controller: ExperimentController) -> None:
     """Build the full dashboard UI. Called inside @ui.page handler."""
     from src.ui.theme import apply_theme
     apply_theme()
@@ -120,14 +122,14 @@ def build_dashboard(state, controller):
         favicon_fn=_update_favicon,
     )
 
-    def dashboard_tick():
+    def dashboard_tick() -> None:
         _check_worker_death()
         tick()
 
     tick_timer = ui.timer(0.033, dashboard_tick)
 
     # Trajectory + twin update at lower rate (50ms ≈ 20Hz)
-    async def visual_tick():
+    async def visual_tick() -> None:
         try:
             if hasattr(traj_container, '_traj_update'):
                 await traj_container._traj_update()

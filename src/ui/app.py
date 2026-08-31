@@ -36,7 +36,7 @@ def _global_poll():
         controller.cleanup_worker()
 
 
-def main():
+def main() -> None:
     mp.set_start_method('spawn', force=True)
 
     from nicegui import ui, app
@@ -55,18 +55,18 @@ def main():
     controller.load_calibration_matrix()
 
     @ui.page('/dashboard')
-    def dashboard_page(token: str = ''):
+    def dashboard_page(token: str = '') -> None:
         if token != DASHBOARD_TOKEN:
             ui.label('Access denied').classes('text-red-500 text-2xl p-8')
             return
         build_dashboard(state, controller)
 
     @ui.page('/monitor')
-    def monitor_page():
+    def monitor_page() -> None:
         build_monitor(state, controller)
 
     @ui.page('/')
-    def root_page():
+    def root_page() -> None:
         from starlette.requests import Request
         request = ui.context.client.request
         # Native window (pywebview) connects from localhost — allow dashboard

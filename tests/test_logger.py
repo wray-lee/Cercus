@@ -8,7 +8,7 @@ import pytest
 from src.core.logger import GroundTruthLogger
 
 
-def test_logger_async_open_session_and_logging():
+def test_logger_async_open_session_and_logging() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         logger = GroundTruthLogger(tmpdir)
         headers = ["sys_time", "ard_time", "dx", "dy", "dz", "stim_state", "g_id"]
