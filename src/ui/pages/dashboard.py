@@ -40,13 +40,13 @@ def build_dashboard(state: AppState, controller: ExperimentController) -> None:
                         'START',
                         on_click=lambda: _start(controller, get_form_values, state, start_btn, stop_btn, _btn_state),
                     ).classes('flex-grow font-bold').style(
-                        'background: var(--ok); color: var(--bg);'
+                        'background: #22A55B; color: #fff;'
                     ).props('dense unelevated')
                     stop_btn = ui.button(
                         'STOP',
                         on_click=lambda: _stop(controller, state, stop_btn),
                     ).classes('flex-grow font-bold').style(
-                        'background: var(--err); color: var(--text);'
+                        'background: #E03C31; color: #fff;'
                     ).props('dense unelevated')
                     stop_btn.disable()
 
