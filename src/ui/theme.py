@@ -110,14 +110,6 @@ _THEME_CSS = '''
         font-weight: 600;
         border-radius: 6px;
     }
-    .q-btn.start-btn {
-        background-color: #22A55B !important;
-        color: white !important;
-    }
-    .q-btn.stop-btn {
-        background-color: #E03C31 !important;
-        color: white !important;
-    }
 
     /* ── Scrollbar ── */
     ::-webkit-scrollbar { width: 8px; height: 8px; }
