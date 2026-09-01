@@ -27,6 +27,11 @@ _THEME_CSS = '''
         --ok:              #8DB954;
         --warn:            #D4883A;
         --err:             #C75449;
+        /* Primary action buttons — saturated for unambiguous START/STOP
+           contrast (v1.0.0 parity). Must be applied with !important to
+           override Quasar's .bg-primary. */
+        --btn-start:       #22A55B;
+        --btn-stop:        #E03C31;
     }
 
     /* ── Global ── */
