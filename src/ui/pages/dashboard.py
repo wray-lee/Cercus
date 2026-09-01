@@ -39,15 +39,11 @@ def build_dashboard(state: AppState, controller: ExperimentController) -> None:
                     start_btn = ui.button(
                         'START',
                         on_click=lambda: _start(controller, get_form_values, state, start_btn, stop_btn, _btn_state),
-                    ).classes('flex-grow font-bold').style(
-                        'background: #22A55B; color: #fff;'
-                    ).props('dense unelevated')
+                    ).classes('flex-grow font-bold start-btn').props('dense unelevated no-caps')
                     stop_btn = ui.button(
                         'STOP',
                         on_click=lambda: _stop(controller, state, stop_btn),
-                    ).classes('flex-grow font-bold').style(
-                        'background: #E03C31; color: #fff;'
-                    ).props('dense unelevated')
+                    ).classes('flex-grow font-bold stop-btn').props('dense unelevated no-caps')
                     stop_btn.disable()
 
             # ── Sync button state with worker on page load/refresh ──
