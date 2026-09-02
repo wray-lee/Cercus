@@ -182,8 +182,11 @@ def test_push_and_push_debounced() -> None:
         forced = tel_q.get(timeout=0.5)
         assert forced["action"] == "forced_msg"
 
-        # Force push on full queue sets abort_flag
+        # A forced frame evicts stale telemetry before retrying.  If the
+        # queue remains unavailable, the worker records the failure.
         mock_full_q = MagicMock()
+        mock_full_q.put_nowait.side_effect = queue.Full()
+        mock_full_q.get_nowait.side_effect = queue.Empty()
         mock_full_q.put.side_effect = queue.Full()
         worker.telemetry_queue = mock_full_q
         worker._push({"action": "forced_full"}, force=True)

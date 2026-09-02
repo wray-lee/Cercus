@@ -50,7 +50,7 @@ The classification is a pure function of the `KinematicEngine` state at trial en
 
 - A new `verdict_frame` is inserted into the main layout between `status_frame` (row=1) and `status_bar` (row=2), shifting status_bar and ctrl_frame down by one row.
 - The frame contains a `ttk.Treeview` with columns: `#`, `Side`, `Verdict`, `Δ mm`, `θ °`.
-- Dark theme styling applied via `ttk.Style` to match the CustomTkinter dark palette.
+- Dark theme styling applied via `ttk.Style` to match the legacy desktop UI dark palette.
 - Verdict rows are tagged by classification for color coding: escape=red, startle=orange, no_response=gray.
 - `_poll_telemetry` gains a handler for `action == "trial_verdict"` that inserts a row into the Treeview.
 - The Treeview is cleared in `_reset_ui()` (experiment end) and when a new session starts (detected via session_num change in telemetry).

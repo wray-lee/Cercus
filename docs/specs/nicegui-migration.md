@@ -4,7 +4,7 @@
 
 ## Destination
 
-Replace the CustomTkinter desktop dashboard + standalone HTML web mirror with a
+Replace the legacy desktop dashboard + standalone HTML web mirror with a
 unified NiceGUI application. The native window (`pywebview`) serves as the
 experiment control panel; a browser-accessible `/monitor` route provides
 read-only observation. One codebase, one process, one server.
@@ -15,7 +15,7 @@ read-only observation. One codebase, one process, one server.
 |---|----------|--------|
 | Q1 | Migration strategy | One-shot rewrite on `feature/nicegui-dashboard`, orchestrator review before merge |
 | Q2 | Responsibility split | 3-layer: `ExperimentController` → `AppState` → NiceGUI pages/components |
-| Q3 | Worker communication | `app.timer(0.016, poll_fn)` — global NiceGUI timer, equivalent to `root.after(16)` |
+| Q3 | Worker communication | `app.timer(0.033, poll_fn)` — global NiceGUI timer, equivalent to `root.after(16)` |
 | Q4 | WebBridge / web_telemetry | Delete both — NiceGUI is the web server |
 | Q5 | Trajectory canvas | Custom Vue component wrapping existing Canvas JS |
 | Q6 | /dashboard access control | One-time `secrets.token_urlsafe(32)`, native window opens `/dashboard?token=<T>`, server rejects mismatched token |
@@ -95,8 +95,8 @@ src/ui/
 
 - `src/ui/dashboard.py` (CTk, replaced by pages/ + components/ + controller + state)
 - `src/ui/static/index.html` (standalone web mirror, replaced by /monitor)
-- `src/ui/web_bridge.py` (state serialization layer, replaced by AppState)
-- `src/core/web_telemetry.py` (separate FastAPI process, replaced by NiceGUI server)
+- `src/ui/legacy web bridge` (state serialization layer, replaced by AppState)
+- `src/core/legacy web telemetry` (separate legacy HTTP server process, replaced by NiceGUI server)
 
 ## Detailed Design
 
@@ -170,12 +170,12 @@ def _global_poll():
     if state.worker_died:
         controller.cleanup_worker()
 
-app.on_startup(lambda: ui.timer(0.016, _global_poll))  # 62.5 Hz
+app.on_startup(lambda: ui.timer(0.033, _global_poll))  # 30 Hz
 # Per-client timers only read state — they never call poll_telemetry()
     state.apply(events)  # updates all reactive fields
     # NiceGUI auto-updates bound UI elements
 
-app.timer(0.016, poll)  # 62.5 Hz, same as current root.after(16)
+app.timer(0.033, poll)  # 30 Hz, same as current root.after(16)
 ```
 
 ### 4. /dashboard Page
@@ -219,7 +219,7 @@ def dashboard_page(token: str = ''):
 ui.run(
     native=True,
     host='0.0.0.0',
-    port=8080,
+    port=8000,
     title='Cercus · Experiment Dashboard',
     window_size=(1400, 900),
 )
@@ -293,8 +293,8 @@ def apply_theme():
 | `start_experiment` / `stop_experiment` (1677-1710) | `controller.start/stop_experiment()` |
 | Calibration callbacks (1574-1673) | `controller.*_calibration()` + `components/calibration.py` |
 | `_start_web_server` / `_push_web_state` (675-760) | Deleted — NiceGUI IS the server |
-| `web_bridge.py` | Deleted — AppState replaces |
-| `web_telemetry.py` | Deleted — NiceGUI server replaces |
+| `legacy web bridge` | Deleted — AppState replaces |
+| `legacy web telemetry` | Deleted — NiceGUI server replaces |
 | `static/index.html` | Deleted — /monitor page replaces |
 | `CalibrationPanel` (84-484) | `components/calibration.py` (UI) + `controller.py` (matrix math) |
 
@@ -316,7 +316,7 @@ New:
 
 Removed:
 - `customtkinter` (no longer needed)
-- Direct `fastapi` / `uvicorn` imports in `web_telemetry.py` (NiceGUI bundles these)
+- Direct `fastapi` / `uvicorn` imports in `legacy web telemetry` (NiceGUI bundles these)
 
 ## Testing
 

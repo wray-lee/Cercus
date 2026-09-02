@@ -36,7 +36,7 @@ class DocsAuditor:
         "Paradigm": {
             "file": "src/models/paradigm.py",
             "class": "BaseParadigm",
-            "required_subclasses": "LoomingParadigm,OpticFlowParadigm,MovementTraceParadigm",
+            "required_subclasses": "LoomingParadigm,OpticFlowParadigm,MovementTraceParadigm,WindParadigm",
         },
         "Trial / Session": {
             "file": "src/workers/stimulus_worker.py",
@@ -102,7 +102,36 @@ class DocsAuditor:
         self.violations.clear()
         self.audit_context_file()
         self.audit_adr_directory()
+        self.audit_active_documentation()
         return self.violations
+
+    def audit_active_documentation(self) -> None:
+        """Reject stale runtime contracts in user-facing documentation."""
+        checks = {
+            "README.md": [(r":(?:8080|8765)/", "outdated-port", "Active server port is 8000."),
+                          (r"62\.5\s*Hz|0\.016s", "outdated-polling-rate", "Global polling runs at 30 Hz."),
+                          (r"sync_states|List\[int\]", "outdated-signature", "Paradigm lifecycle methods return 2/3-tuples.")],
+            "README-cn.md": [(r":(?:8080|8765)/", "outdated-port", "Active server port is 8000.")],
+            "STARTUP.md": [(r"8080", "outdated-port", "Active server port is 8000.")],
+            "docs/specs/nicegui-migration.md": [(r"port=8080", "outdated-port", "Active server port is 8000."),
+                                                  (r"0\.016", "outdated-polling-rate", "Global polling runs at 30 Hz.")],
+            "docs/PRD.md": [(r"CustomTkinter|Pygame|pygame|web_bridge|WebTelemetry", "outdated-tech-reference", "Use NiceGUI and PsychoPy runtime architecture.")],
+            "src/models/BOUNDARY.md": [(r"List\[int\]|sync_states|Tuple\[bool, List\[dict\], dict, List\[int\]\]", "outdated-signature", "Paradigm lifecycle signatures return 2/3-tuples.")],
+        }
+        for rel_path, patterns in checks.items():
+            path = self.root_dir / rel_path
+            if not path.is_file():
+                continue
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except Exception as exc:
+                self.violations.append(DocViolation(rel_path, 1, "read-error", str(exc)))
+                continue
+            for line_no, line in enumerate(lines, start=1):
+                for pattern, category, message in patterns:
+                    if re.search(pattern, line, re.IGNORECASE):
+                        self.violations.append(DocViolation(rel_path, line_no, category, message))
+                        break
 
     def audit_context_file(self) -> None:
         """Audit CONTEXT.md Section 2 ubiquitous language and Section 3 topology."""

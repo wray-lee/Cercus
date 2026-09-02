@@ -217,21 +217,15 @@ def test_worker_death_detection_abort_preserved(monkeypatch: pytest.MonkeyPatch)
     assert state.worker_error == "User aborted"
 
 
-def test_ipc_queues_cancel_join_thread_on_cleanup() -> None:
-    """Verify _kill_worker cancels join thread on all IPC queues before join."""
+def test_kill_worker_terminates_before_bounded_join() -> None:
+    """Verify a live worker is terminated before the bounded join."""
     ctrl = ExperimentController()
-    mock_cmd_q = MagicMock()
-    mock_tel_q = MagicMock()
     mock_proc = MagicMock()
-    mock_proc.is_alive.return_value = False
-
-    ctrl.cmd_queue = mock_cmd_q
-    ctrl.telemetry_queue = mock_tel_q
+    mock_proc.is_alive.return_value = True
 
     ctrl._kill_worker(mock_proc, timeout=0.1)
 
-    mock_cmd_q.cancel_join_thread.assert_called_once()
-    mock_tel_q.cancel_join_thread.assert_called_once()
+    mock_proc.terminate.assert_called_once()
     mock_proc.join.assert_called_once_with(timeout=0.1)
 
 
@@ -243,16 +237,17 @@ def test_controller_stop_experiment_fallback_kill() -> None:
     ctrl.worker_process = mock_proc
 
     mock_queue = MagicMock()
-    mock_queue.put.side_effect = queue.Full("Queue is full")
+    mock_queue.put_nowait.side_effect = queue.Full("Queue is full")
+    mock_queue.get_nowait.side_effect = queue.Empty
     ctrl.cmd_queue = mock_queue
 
     kill_called = False
 
-    def _mock_kill(proc: Any, timeout: float = 4.0) -> None:
+    def _mock_kill() -> None:
         nonlocal kill_called
         kill_called = True
 
-    ctrl._kill_worker = _mock_kill
+    ctrl._terminate_worker_nonblocking = _mock_kill
     ctrl.stop_experiment()
 
     assert kill_called is True

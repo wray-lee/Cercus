@@ -12,11 +12,11 @@ python main.py
 
 **预期行为：**
 - 控制台打印 `Dashboard token: ...` 和 `Monitor available at: ...`
-- NiceGUI 打印 `ready to go on http://localhost:8080 ...`
+- NiceGUI 打印 `ready to go on http://localhost:8000 ...`
 - **自动打开本地窗口**（WebView2 native window）显示 Dashboard
 
 **如果没有自动打开窗口：**
-- 手动访问 `http://localhost:8080/monitor`（只读监控页面）
+- 手动访问 `http://localhost:8000/monitor`（只读监控页面）
 - 或等待几秒，WebView2 初始化需要时间
 
 ## 无头环境/SSH 测试
@@ -53,7 +53,7 @@ git pull origin main
 **修复：**
 ```bash
 # 查找占用端口的进程
-netstat -ano | findstr :8080
+netstat -ano | findstr :8000
 
 # 杀死进程（替换 <PID> 为实际 PID）
 taskkill /F /PID <PID>
@@ -66,7 +66,7 @@ taskkill /F /PID <PID>
 - 或 WebView2 Runtime 未安装
 
 **解决：**
-- SSH 环境：忽略此错误，使用浏览器访问 `http://localhost:8080/monitor`
+- SSH 环境：忽略此错误，使用浏览器访问 `http://localhost:8000/monitor`
 - 桌面环境：安装 [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
 
 ### 4. Native 窗口无法访问 /dashboard

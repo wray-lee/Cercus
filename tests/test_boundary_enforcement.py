@@ -195,3 +195,23 @@ class CoreRenderer:
     assert cats.count("renderer-stateful-variable") == 2
     assert cats.count("renderer-stateful-method") == 1
 
+
+def test_renderer_forbidden_imports_detected() -> None:
+    """Verify that CoreRenderer cannot import hardware, kinematics, threading, multiprocessing."""
+    src = """
+from src.core.hardware import SerialDaemon
+from src.core.kinematics import KinematicEngine
+import threading
+import multiprocessing
+import serial
+import socket
+
+class CoreRenderer:
+    pass
+"""
+    auditor = BoundaryAuditor("src/core/render.py", ROOT_DIR, src)
+    violations = auditor.audit()
+    cats = [v.category for v in violations]
+    assert "renderer-forbidden-import" in cats
+    assert cats.count("renderer-forbidden-import") >= 5
+

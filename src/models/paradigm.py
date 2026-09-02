@@ -763,9 +763,9 @@ class ClassicLoomingParadigm(BaseParadigm):
             },
             "Final Degree (°)": {
                 "type": "float",
-                "default": 180.0,
+                "default": 179.0,
                 "min": 1.0,
-                "max": 179.9,
+                "max": 179.0,
                 "label": "Final Degree (°)",
             },
             "Number of Trials": {
@@ -1832,6 +1832,14 @@ class GratingParadigm(BaseParadigm):
         r_cm = math.tan(math.radians(deg / 2.0)) * self.viewing_distance_cm
         return r_cm * (self.per_screen_w_px / self.screen_width_cm) * self.scale
 
+    def _cpd_to_cpp(self, cpd: float) -> float:
+        """Convert cycles per visual degree to PsychoPy cycles per pixel."""
+        degree_width_cm = 2.0 * self.viewing_distance_cm * math.tan(math.radians(0.5))
+        pixels_per_degree = degree_width_cm * (
+            self.per_screen_w_px / self.screen_width_cm
+        ) * self.scale
+        return float(cpd / max(pixels_per_degree, 1e-6))
+
     def _build_grating_commands(
         self, phase: float, trial_context: dict
     ) -> List[dict]:
@@ -1860,7 +1868,7 @@ class GratingParadigm(BaseParadigm):
                     "class_name": "GratingStim",
                     "init_kwargs": {"tex": "sin", "mask": None},
                     "updates": {
-                        "sf": sf,
+                        "sf": self._cpd_to_cpp(sf),
                         "ori": ori,
                         "phase": phase,
                         "size": [full_w, h],
@@ -1900,7 +1908,7 @@ class GratingParadigm(BaseParadigm):
                     "class_name": "GratingStim",
                     "init_kwargs": {"tex": "sin", "mask": None},
                     "updates": {
-                        "sf": sf,
+                        "sf": self._cpd_to_cpp(sf),
                         "ori": ori,
                         "phase": phase,
                         "size": [w, h],
@@ -1913,7 +1921,7 @@ class GratingParadigm(BaseParadigm):
                     "class_name": "GratingStim",
                     "init_kwargs": {"tex": "sin", "mask": None},
                     "updates": {
-                        "sf": sf,
+                        "sf": self._cpd_to_cpp(sf),
                         "ori": ori,
                         "phase": phase,
                         "size": [w, h],

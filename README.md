@@ -38,7 +38,7 @@ Launch the dashboard:
 python main.py
 ```
 
-The native dashboard window opens automatically. A read-only monitor is available at `http://<your-ip>:8080/monitor` from any browser on the LAN.
+The native dashboard window opens automatically. A read-only monitor is available at `http://<your-ip>:8000/monitor` from any browser on the LAN.
 
 ## 3. Built-in Paradigms
 
@@ -53,6 +53,7 @@ The following paradigms are built-in and can be dynamically loaded via the dashb
 | **Grating**        | Sinusoidal grating stimulus. Supports static and drifting modes with configurable spatial frequency, temporal frequency, orientation, and contrast.                                                    |
 | **SingleLooming**  | Single-screen centered looming stimulus. Same multi-modal conditions as Looming but designed for single-display setups.                                                                                |
 | **Blank**          | No stimulus — hardware tracking only. Useful for baseline recordings.                                                                                                                                  |
+| **Wind**           | Pure wind stimulus without visual rendering. Configurable onset delay and fixed post-wind recording.                                                                                                    |
 
 ## 4. Physical Calibration
 
@@ -80,6 +81,7 @@ PARADIGM_REGISTRY: Dict[str, type] = {
     "Blank": BlankParadigm,
     "Grating": GratingParadigm,
     "SingleLooming": SingleLoomingParadigm,
+    "Wind": WindParadigm,
 }
 ```
 
@@ -108,8 +110,8 @@ The dashboard runs an integrated web server (NiceGUI + uvicorn) accessible from 
 
 ### Access
 
-- The monitor URL is printed at startup, e.g. `Monitor available at: http://<host>:8080/monitor`.
-- The server binds `0.0.0.0:8080`.
+- The monitor URL is printed at startup, e.g. `Monitor available at: http://<host>:8000/monitor`.
+- The server binds `0.0.0.0:8000`.
 - The dashboard native window is token-gated — browser access to `/dashboard` is denied.
 
 ### What it shows
@@ -123,7 +125,7 @@ The dashboard runs an integrated web server (NiceGUI + uvicorn) accessible from 
 
 ### Architecture
 
-The dashboard and monitor share a single NiceGUI server process. A global `app.timer` at 62.5 Hz polls the worker's `mp.Queue` and updates a shared `AppState` object. Per-client timers in each page read from this shared state to update their widgets — no queue races.
+The dashboard and monitor share a single NiceGUI server process. A global `app.timer` at 30 Hz polls the worker's `mp.Queue` and updates a shared `AppState` object. Per-client timers in each page read from this shared state to update their widgets — no queue races.
 
 ### Notes
 
@@ -159,8 +161,8 @@ class MyParadigm(BaseParadigm):
 
 - **`generate_trials(self, pattern_key)`**: Construct and return the trial contexts (`List[dict]`) for the session based on the selected pattern.
 - **`prepare_trial(self, trial_context)`**: Return hardware initialization serial commands before a trial starts (or an empty string `""`).
-- **`get_idle_frame(self, hw_telemetry)`**: Return steady-state rendering instructions for ITI/ISI phases as `(cmds, telemetry_dict, sync_states)`.
-- **`process_frame(self, elapsed_time, trial_context, hw_telemetry)`**: The frame-level closed-loop calculation core. Return the state tuple `(is_done, cmds, telemetry_dict, sync_states)` based on the timestamp and hardware telemetry.
+- **`get_idle_frame(self, hw_telemetry)`**: Return steady-state rendering instructions for ITI/ISI phases as `(cmds, telemetry_dict)`.
+- **`process_frame(self, elapsed_time, trial_context, hw_telemetry)`**: The frame-level closed-loop calculation core. Return `(is_done, cmds, telemetry_dict)` based on the timestamp and hardware telemetry.
 
 ### Step 4: Standardized Rendering Instructions
 

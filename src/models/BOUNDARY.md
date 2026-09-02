@@ -8,8 +8,8 @@
   - `get_parameter_schema() -> Dict[str, Dict[str, Any]]`
   - `generate_trials(pattern_key: str) -> List[Dict[str, Any]]`
   - `prepare_trial(trial_context: dict) -> str`
-  - `process_frame(elapsed_time: float, trial_context: dict, hw_telemetry: dict) -> Tuple[bool, List[dict], dict, List[int]]`
-  - `get_idle_frame(hw_telemetry: dict) -> Tuple[List[dict], dict, List[int]]`
+  - `process_frame(elapsed_time: float, trial_context: dict, hw_telemetry: dict) -> Tuple[bool, List[dict], dict]`
+  - `get_idle_frame(hw_telemetry: dict) -> Tuple[List[dict], dict]`
 - Registration: new paradigms MUST be added to `PARADIGM_REGISTRY` in `paradigm.py`.
 
 ## Reverse Modification Prohibition
