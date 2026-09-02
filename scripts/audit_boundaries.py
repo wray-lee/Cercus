@@ -194,6 +194,19 @@ class BoundaryAuditor(ast.NodeVisitor):
                     )
                 )
 
+            # Renderer specific import check
+            if self.rel_path == "src/core/render.py":
+                for forbidden in FORBIDDEN_RENDERER_IMPORTS:
+                    if mod_name == forbidden or mod_name.startswith(forbidden + "."):
+                        self.violations.append(
+                            Violation(
+                                self.file_path,
+                                node.lineno,
+                                "renderer-forbidden-import",
+                                f"CoreRenderer must not import '{mod_name}'. Violates renderer statelessness boundary.",
+                            )
+                        )
+
             # 2. Layer boundary checks
             self._check_module_import_boundary(mod_name, node.lineno)
 
@@ -233,6 +246,19 @@ class BoundaryAuditor(ast.NodeVisitor):
     ) -> None:
         top_pkg = full_name.split(".")[0]
         base = module_base or full_name
+
+        # --- Specific Core Renderer Immutability & Stateless Checks ---
+        if self.rel_path == "src/core/render.py":
+            for forbidden in FORBIDDEN_RENDERER_IMPORTS:
+                if full_name == forbidden or full_name.startswith(forbidden + ".") or base == forbidden:
+                    self.violations.append(
+                        Violation(
+                            self.file_path,
+                            lineno,
+                            "renderer-forbidden-import",
+                            f"CoreRenderer must not import '{full_name}'. Violates renderer statelessness boundary.",
+                        )
+                    )
 
         # --- Worker Layer Checks ---
         if self.layer == "worker":
@@ -628,6 +654,7 @@ def main() -> int:
         "renderer-stateless": {
             "renderer-stateful-variable",
             "renderer-stateful-method",
+            "renderer-forbidden-import",
         },
         "zero-allocation": {
             "zero-allocation-violation",

@@ -2,8 +2,8 @@
 
 **Status**: Draft / Active Spec  
 **Author**: `wray-lee <i@wray7.top>`  
-**Date**: 2025-02-28  
-**Target Architecture**: Cercus v0.1.0+ Multi-Process Behavior & Telemetry Engine  
+**Date**: 2026-09-01
+**Target Architecture**: Cercus v2.0 NiceGUI + PsychoPy multi-process behavior and telemetry engine
 
 ---
 
@@ -26,11 +26,11 @@ Legacy systems often suffer from GUI thread starvation, GC pause jitters, and cr
 - **Multisensory Synchronization**: Trigger wind solenoid valves with precise TTC (Time-To-Collision) offsets (e.g., -373ms to +200ms) relative to visual looming expansion ($l/v = 120$).
 - **Architectural Isolation**: Separate UI controller, execution workers, and web telemetry into isolated processes connected exclusively via `multiprocessing.Queue`.
 - **Paradigm Extensibility**: Provide a pluggable paradigm architecture (`BaseParadigm`) for Looming, OpticFlow, MovementTrace, etc., without modifying core infrastructure.
-- **Dual UI & Web Mirroring**: Provide desktop CustomTkinter controls alongside a low-latency web canvas mirror for remote observation.
+- **Unified UI & Web Monitoring**: Provide a NiceGUI native control window alongside a read-only LAN monitor route.
 
 ### Non-Goals
-- **In-process Direct Execution**: Running hardware drivers or experiment loops inside the CustomTkinter UI thread.
-- **Dynamic Dependency Injection**: Adding heavy third-party web or gaming engines outside python stdlib/pygame/customtkinter/websockets.
+- **In-process Direct Execution**: Running hardware drivers or experiment loops inside the NiceGUI UI thread.
+- **Uncontrolled Dependency Growth**: Adding unapproved third-party dependencies outside the locked requirements.
 - **Shared Memory Synchronization**: Using `mp.shared_memory` or shared global objects across worker process boundaries.
 
 ---
@@ -42,9 +42,9 @@ Legacy systems often suffer from GUI thread starvation, GC pause jitters, and cr
 | **BaseParadigm** | Abstract state machine defining parameter schema, trial generation, frame processing (`process_frame`), and idle state frames (`get_idle_frame`). |
 | **KinematicEngine** | Hot-path engine receiving raw optical mouse readings ($dX, dY$), calculating directional velocity/displacement vectors, and evaluating trigger threshold conditions. |
 | **SerialDaemon** | Non-blocking thread-driven hardware interface managing Arduino Mega 2560 communication for solenoid valve activation and sensor input. |
-| **CoreRenderer** | Pure geometry visual rendering engine mapping paradigm draw commands onto Pygame surfaces. |
+| **CoreRenderer** | Pure geometry visual rendering engine mapping paradigm draw commands onto PsychoPy objects. |
 | **StimulusWorker** | Isolated process hosting the execution loop (KinematicEngine + Paradigm + SerialDaemon + Renderer). |
-| **WebTelemetry** | Async server broadcasting encoded canvas frames and telemetry JSON to web consumers. |
+| **AppState** | Shared in-process reactive state updated by the global telemetry poller for dashboard and monitor pages. |
 
 ---
 
@@ -54,9 +54,9 @@ Legacy systems often suffer from GUI thread starvation, GC pause jitters, and cr
 
 ```
 +-------------------------------------------------------------------------------+
-| Main Controller Process (ui/dashboard.py)                                     |
-|   ├── CustomTkinter GUI (Form controls & status bar)                          |
-|   └── Web Server & Telemetry Bridge (ui/web_bridge.py -> ui/static/index.html)|
+| Main UI Process (src/ui/app.py)                                               |
+|   ├── NiceGUI native dashboard (form controls & status)                       |
+|   └── NiceGUI /monitor route (read-only LAN observation)                      |
 +------------------------------------+------------------------------------------+
                                      |
                        cmd_queue     | telemetry_queue
@@ -74,8 +74,8 @@ Legacy systems often suffer from GUI thread starvation, GC pause jitters, and cr
 1. User configures trial parameters in `dashboard.py`.
 2. UI serializes config into dictionary and puts `START` payload into `cmd_queue`.
 3. `stimulus_worker.py` pops command, initializes selected `BaseParadigm`, and enters high-frequency loop.
-4. Each frame: `SerialDaemon` delivers kinematics -> `KinematicEngine` updates -> `BaseParadigm` returns draw commands & hardware triggers -> `SerialDaemon` fires solenoids -> `CoreRenderer` draws surface.
-5. Telemetry frame is posted to `telemetry_queue` -> `dashboard.py` / `web_bridge.py` forwards to UI and Web Sockets.
+4. Each frame: `SerialDaemon` delivers kinematics -> `KinematicEngine` updates -> `BaseParadigm` returns draw commands & hardware triggers -> `SerialDaemon` fires solenoids -> `CoreRenderer` draws PsychoPy objects.
+5. Telemetry frames and terminal events are posted to `telemetry_queue`; the global UI poller updates `AppState` for both routes.
 
 ---
 

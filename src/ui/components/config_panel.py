@@ -48,7 +48,11 @@ def config_panel(on_paradigm_change: Any = None) -> tuple:
             import serial.tools.list_ports
             ports = [p.device for p in serial.tools.list_ports.comports()]
             port_options = ['mock'] + ports if ports else ['mock']
-        except ImportError:
+        except Exception as exc:
+            log.warning(
+                "Serial port discovery failed (%s); falling back to ['mock']",
+                exc,
+            )
             port_options = ['mock']
 
         serial_input = ui.select(port_options, value='mock', label='Serial Port').props('dense outlined').classes('flex-grow')

@@ -14,6 +14,7 @@ and worker lifecycle without Pygame rendering.
 """
 import argparse
 import gc
+import math
 import multiprocessing as mp
 import queue
 import sys
@@ -39,12 +40,19 @@ def run_full_experiment(num_trials: int, timeout: int, profile: bool) -> int:
 
     output_dir = Path('data/synthetic_test')
     output_dir.mkdir(parents=True, exist_ok=True)
+    # SingleLooming emits a fixed batch of 18 trials per session.
+    batch_size = 18
+    total_sessions = max(1, math.ceil(num_trials / batch_size))
+    expected_trials = total_sessions * batch_size
     config = {
         "Subject ID": "SYNTH_TEST",
         "Session Number": 1,
+        "Total Sessions": total_sessions,
         "Paradigm Class": "SingleLooming",
-        "Experiment Pattern": "manual",
-        "Total Trials": num_trials,
+        "Experiment Pattern": "Baseline Visual",
+        "Execution Mode": "Continuous",
+        "ITI Range (sec)": "0-0",
+        "ISI Range (sec)": "0-0",
         "Serial Port": "mock",
         "Debug Mode": True,
         "Screen Width (px)": 1920,
@@ -93,11 +101,11 @@ def run_full_experiment(num_trials: int, timeout: int, profile: bool) -> int:
             action = msg.get('action', '')
             telemetry_count += 1
 
-            if action == 'verdict':
+            if action in ('trial_verdict', 'verdict'):
                 verdicts.append(msg)
                 n = len(verdicts)
-                if n % 20 == 0 or n == num_trials:
-                    print(f"  verdict {n}/{num_trials}")
+                if n % 20 == 0 or n == expected_trials:
+                    print(f"  verdict {n}/{expected_trials}")
             elif action in ('terminal', 'worker_done', 'worker_error', 'worker_abort'):
                 terminal_received = True
                 terminal_status = msg.get('status', action)
@@ -126,7 +134,7 @@ def run_full_experiment(num_trials: int, timeout: int, profile: bool) -> int:
         mem_growth_kb = sum(s.size_diff for s in stats if s.size_diff > 0) / 1024
         print(f"\nUI-side memory growth: {mem_growth_kb:.1f} KB")
 
-    return _report(num_trials, worker_proc.exitcode, terminal_received,
+    return _report(expected_trials, worker_proc.exitcode, terminal_received,
                    terminal_status, len(verdicts), telemetry_count,
                    broken_pipe, mem_growth_kb if profile else None, failures)
 
@@ -228,17 +236,20 @@ def run_headless_validation(num_trials: int, profile: bool) -> int:
             break
     # Simulate putting terminal
     tel_q.put_nowait({"action": "terminal", "status": "completed"})
-    # Drain
+    # Drain with a short grace period: multiprocessing.Queue uses a feeder
+    # thread, so an immediate get_nowait() can race a just-enqueued packet.
     tel_count = 0
     terminal_found = False
-    while True:
+    drain_deadline = time.monotonic() + 2.0
+    while time.monotonic() < drain_deadline:
         try:
-            m = tel_q.get_nowait()
+            m = tel_q.get(timeout=0.05)
             tel_count += 1
-            if m.get('action') == 'terminal':
+            if m.get('action') in ('terminal', 'worker_done'):
                 terminal_found = True
+                break
         except queue.Empty:
-            break
+            continue
     if terminal_found:
         print(f"[PASS] IPC protocol: {tel_count} messages drained, terminal received")
     else:

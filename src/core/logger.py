@@ -1,11 +1,13 @@
+import collections
 import csv
 import json
 import os
-import queue
 import threading
-from typing import Any, List
+from typing import Any, List, Optional
 
 import numpy as np
+
+DEFAULT_MAX_KINEMATICS_BATCHES: int = 1000
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -22,7 +24,22 @@ class NumpyEncoder(json.JSONEncoder):
 
 
 class GroundTruthLogger:
-    """Asynchronous ground-truth event and kinematics CSV logger."""
+    """Asynchronous ground-truth event and kinematics CSV logger with bounded memory.
+
+    Architecture & Tradeoff:
+    - Dual-channel design:
+      1. Critical Event & Control Channel (unbounded): Lifecycle commands (`open_session`,
+         `close`, `save_cache`, `flush`, shutdown poison pill) and paradigm events
+         (`trial_start`, `stimulus_onset`, `trial_stop`, `trial_verdict`) are never dropped.
+      2. Bulk Kinematics Channel (bounded): High-frequency kinematics batches are buffered up
+         to `max_kinematics_batches`. Under an unrecoverable disk stall or sustained I/O
+         backpressure, excess kinematics batches are dropped non-blockingly to bound memory
+         growth and prevent blocking the real-time stimulus rendering loop.
+      - Tradeoff: Zero data loss is NOT claimed during an impossible sustained disk stall;
+        instead, bulk kinematics data is explicitly shed while tracking observable drop
+        counts (`dropped_kinematics_batches`, `dropped_kinematics_rows`), while critical
+        experiment metadata and session lifecycles remain completely intact.
+    """
 
     EVENT_COLUMNS = [
         "event_name",
@@ -33,7 +50,11 @@ class GroundTruthLogger:
         "details",
     ]
 
-    def __init__(self, output_dir: str) -> None:
+    def __init__(
+        self,
+        output_dir: str,
+        max_kinematics_batches: int = DEFAULT_MAX_KINEMATICS_BATCHES,
+    ) -> None:
         self.out = output_dir
         os.makedirs(self.out, exist_ok=True)
         self.global_trial_id = self._load_cache()
@@ -45,12 +66,39 @@ class GroundTruthLogger:
         self._kinematics_writer = None
         self._session_open = False
 
-        # Async I/O: dedicated writer thread with queue
-        self._io_queue: queue.Queue = queue.Queue()
+        self._max_kinematics_batches = max(1, max_kinematics_batches)
+        self._dropped_kinematics_batches = 0
+        self._dropped_kinematics_rows = 0
+
+        # Synchronization and dual-channel queues
+        self._lock = threading.RLock()
+        self._not_empty = threading.Condition(self._lock)
+        self._control_items: collections.deque = collections.deque()
+        self._kin_items: collections.deque = collections.deque()
+
+        # Dedicated background writer daemon
         self._writer_thread = threading.Thread(
             target=self._io_loop, daemon=True
         )
         self._writer_thread.start()
+
+    @property
+    def dropped_kinematics_batches(self) -> int:
+        """Total number of kinematics batches dropped due to backpressure."""
+        with self._lock:
+            return self._dropped_kinematics_batches
+
+    @property
+    def dropped_kinematics_rows(self) -> int:
+        """Total number of individual kinematics rows/samples dropped."""
+        with self._lock:
+            return self._dropped_kinematics_rows
+
+    @property
+    def dropped_kinematics_count(self) -> int:
+        """Alias for dropped kinematics batches."""
+        with self._lock:
+            return self._dropped_kinematics_batches
 
     def _load_cache(self) -> int:
         cache_path = os.path.join(self.out, ".trial_cache.txt")
@@ -65,7 +113,7 @@ class GroundTruthLogger:
     # Writer daemon – consumes all disk-I/O commands off the main thread
     # ------------------------------------------------------------------
 
-    def _do_close(self):
+    def _do_close(self) -> None:
         if self._event_file:
             try:
                 self._event_file.flush()
@@ -83,11 +131,48 @@ class GroundTruthLogger:
                 pass
             self._kinematics_file, self._kinematics_writer = None, None
 
-    def _io_loop(self):
+    def _drain_pending_kinematics(self) -> None:
+        """Drain all currently queued kinematics batches to the active writer."""
         while True:
-            item = self._io_queue.get()
-            if item is None:  # poison pill
+            with self._lock:
+                if not self._kin_items:
+                    break
+                batch = self._kin_items.popleft()
+            if self._kinematics_writer:
+                try:
+                    self._kinematics_writer.writerows(batch)
+                except Exception:
+                    pass
+
+    def _io_loop(self) -> None:
+        while True:
+            with self._lock:
+                while not self._control_items and not self._kin_items:
+                    self._not_empty.wait()
+
+                # Prioritize control and lifecycle commands over kinematics
+                if self._control_items:
+                    item = self._control_items.popleft()
+                    is_control = True
+                else:
+                    item = self._kin_items.popleft()
+                    is_control = False
+
+            if not is_control:
+                # Bulk kinematics batch item
+                if self._kinematics_writer:
+                    try:
+                        self._kinematics_writer.writerows(item)
+                    except Exception:
+                        pass
+                continue
+
+            # Control / Event item
+            if item is None:  # Poison pill
+                self._drain_pending_kinematics()
+                self._do_close()
                 break
+
             action, payload = item
             try:
                 if action == "open_session":
@@ -110,34 +195,48 @@ class GroundTruthLogger:
                     self._kinematics_writer = csv.writer(self._kinematics_file)
                     if not kin_exists:
                         self._kinematics_writer.writerow(kin_headers)
+
                 elif action == "close":
+                    self._drain_pending_kinematics()
                     self._do_close()
                     if payload:
                         payload.set()
+
                 elif action == "event_row":
                     if self._event_writer:
                         # payload: (event_name, ts, session, trial, gid, details_dict)
-                        # json.dumps 在后台线程执行，不阻塞渲染主线程
+                        # json.dumps serialized on background thread, keeping main loop non-blocking
                         *head, details = payload
                         row = [*head, json.dumps(details, cls=NumpyEncoder) if details else ""]
                         self._event_writer.writerow(row)
-                elif action == "kin_rows":
-                    if self._kinematics_writer:
-                        self._kinematics_writer.writerows(payload)
+
+                elif action == "flush_kin":
+                    self._drain_pending_kinematics()
+                    if self._kinematics_file:
+                        self._kinematics_file.flush()
+                        os.fsync(self._kinematics_file.fileno())
+
                 elif action == "flush_event":
                     if self._event_file:
                         self._event_file.flush()
                         os.fsync(self._event_file.fileno())
-                elif action == "flush_kin":
-                    if self._kinematics_file:
-                        self._kinematics_file.flush()
-                        os.fsync(self._kinematics_file.fileno())
+
                 elif action == "save_cache":
                     cache_path = os.path.join(self.out, ".trial_cache.txt")
                     with open(cache_path, "w") as f:
                         f.write(str(payload))
+
                 elif action == "flush_sync":
-                    payload.set()
+                    self._drain_pending_kinematics()
+                    if self._event_file:
+                        self._event_file.flush()
+                        os.fsync(self._event_file.fileno())
+                    if self._kinematics_file:
+                        self._kinematics_file.flush()
+                        os.fsync(self._kinematics_file.fileno())
+                    if payload:
+                        payload.set()
+
             except Exception:
                 pass  # never crash the writer thread
 
@@ -149,56 +248,82 @@ class GroundTruthLogger:
         self.session_num = session_num
         self.trial_in_session = 0
         self._session_open = True
-        self._io_queue.put(("open_session", (subject_id, session_num, kin_headers)))
+        with self._lock:
+            self._control_items.append(("open_session", (subject_id, session_num, kin_headers)))
+            self._not_empty.notify()
 
     def is_open(self) -> bool:
         return self._session_open
 
-    def close(self) -> None:
+    def close(self, timeout: Optional[float] = None) -> bool:
         """Flush pending writes and close current session files (thread stays alive)."""
         if self._session_open:
             self._session_open = False
             done = threading.Event()
-            self._io_queue.put(("close", done))
-            done.wait()
+            with self._lock:
+                self._control_items.append(("close", done))
+                self._not_empty.notify()
+            return done.wait(timeout=timeout)
+        return True
 
-    def shutdown(self) -> None:
+    def shutdown(self, timeout: Optional[float] = None) -> None:
         """Final shutdown: flush everything, stop writer thread, close files."""
-        self.close()
-        self._io_queue.put(None)  # poison pill
-        self._writer_thread.join()
+        self.close(timeout=timeout)
+        with self._lock:
+            self._control_items.append(None)  # poison pill
+            self._not_empty.notify()
+        self._writer_thread.join(timeout=timeout)
 
     def advance_trial(self) -> None:
         self.trial_in_session += 1
         self.global_trial_id += 1
-        self._io_queue.put(("save_cache", self.global_trial_id))
+        with self._lock:
+            self._control_items.append(("save_cache", self.global_trial_id))
+            self._not_empty.notify()
 
     def log_event(self, event_name: str, timestamp: float, **details: Any) -> None:
-        """Enqueue an event row.  Serialization is deferred to the I/O thread."""
+        """Enqueue an event row. Serialization is deferred to the I/O thread.
+
+        Critical events use the unbounded control channel and are never dropped.
+        """
         if not self._session_open:
             return
-        # 主线程仅打包原始数据，不做 json.dumps；序列化在 _io_loop 后台完成
-        self._io_queue.put(("event_row", (
-            event_name,
-            f"{timestamp:.6f}",
-            self.session_num,
-            self.trial_in_session,
-            self.global_trial_id,
-            details,  # raw dict — _io_loop will serialize
-        )))
+        with self._lock:
+            self._control_items.append(("event_row", (
+                event_name,
+                f"{timestamp:.6f}",
+                self.session_num,
+                self.trial_in_session,
+                self.global_trial_id,
+                details,
+            )))
+            self._not_empty.notify()
 
     def log_kinematics_batch(self, items: List[List[Any]]) -> None:
-        if not self._session_open:
+        """Enqueue a kinematics batch to the bounded bulk kinematics channel.
+
+        Nonblocking: If queue capacity is reached, incoming batch is dropped and
+        drop counts are incremented without stalling the caller.
+        """
+        if not self._session_open or not items:
             return
-        self._io_queue.put(("kin_rows", items))
+        with self._lock:
+            if len(self._kin_items) >= self._max_kinematics_batches:
+                self._dropped_kinematics_batches += 1
+                self._dropped_kinematics_rows += len(items)
+                return
+            self._kin_items.append(items)
+            self._not_empty.notify()
 
     def flush_kinematics(self) -> None:
-        self._io_queue.put(("flush_kin", None))
+        with self._lock:
+            self._control_items.append(("flush_kin", None))
+            self._not_empty.notify()
 
-    def flush(self) -> None:
+    def flush(self, timeout: Optional[float] = None) -> bool:
         """Block until all prior queued writes are flushed to disk."""
-        self._io_queue.put(("flush_event", None))
-        self._io_queue.put(("flush_kin", None))
         done = threading.Event()
-        self._io_queue.put(("flush_sync", done))
-        done.wait()
+        with self._lock:
+            self._control_items.append(("flush_sync", done))
+            self._not_empty.notify()
+        return done.wait(timeout=timeout)

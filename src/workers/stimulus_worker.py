@@ -74,6 +74,14 @@ class GenericWorker:
             self.parser.set_calib_matrix(matrix)
         self.abort_flag = False
         self._last_tel_data = {h: 0.0 for _, _, h in schema}
+        self._last_tel_data.update({
+            "k_angle": 0.0,
+            "k_turn_speed": 0.0,
+            "k_move_speed": 0.0,
+            "k_disp": 0.0,
+            "pos_x": 0.0,
+            "pos_y": 0.0,
+        })
         self.event = None
         self._last_telemetry_push = 0.0
         self._telemetry_interval = 0.03  # 30ms downsampling interval
@@ -106,10 +114,23 @@ class GenericWorker:
     def _push(self, frame: dict, force: bool = False):
         try:
             if force:
+                # Forced frames (verdicts and terminal signals) take priority
+                # over stale downsampled telemetry when the bounded queue is
+                # full.  Discarding one old frame is preferable to losing the
+                # event that describes the trial or worker outcome.
                 try:
-                    self.telemetry_queue.put(frame, timeout=0.1)
+                    self.telemetry_queue.put_nowait(frame)
                 except queue.Full:
-                    self.abort_flag = True
+                    try:
+                        self.telemetry_queue.get_nowait()
+                    except (queue.Empty, ValueError, OSError, EOFError):
+                        pass
+                    try:
+                        self.telemetry_queue.put(frame, timeout=0.1)
+                    except queue.Full:
+                        self.abort_flag = True
+                    except (BrokenPipeError, EOFError, ValueError):
+                        self.abort_flag = True
                 except (BrokenPipeError, EOFError, ValueError):
                     self.abort_flag = True
                 return
@@ -168,7 +189,7 @@ class GenericWorker:
             dy_idx = self._dy_idx
             dz_idx = self._dz_idx
             field_keys = self._field_keys
-            cal_fields = None
+            last_row = None
             for sys_t, raw in items:
                 row = self.parser.parse(sys_t, raw, g_id)
                 if row is None:
@@ -176,21 +197,21 @@ class GenericWorker:
                 if log_open:
                     kin_rows.append(row)
                 # row layout: [sys_time_str, field0, field1, ..., g_id]
-                # Extract calibrated fields by precomputed index (skip sys_time[0], g_id[-1])
-                cal_fields = row[1:-1]
-                _ard = cal_fields[ard_idx] if ard_idx >= 0 else None
+                # Extract fields directly to avoid a per-sample list slice.
+                last_row = row
+                _ard = row[1 + ard_idx] if ard_idx >= 0 else None
                 t_sec = float(_ard) / 1000.0 if (_ard is not None and float(_ard) > 0.0) else float(sys_t)
                 self.kinematic_engine.update(
                     t_sec,
-                    float(cal_fields[dx_idx]) if dx_idx >= 0 else 0.0,
-                    float(cal_fields[dy_idx]) if dy_idx >= 0 else 0.0,
-                    float(cal_fields[dz_idx]) if dz_idx >= 0 else 0.0,
+                    float(row[1 + dx_idx]) if dx_idx >= 0 else 0.0,
+                    float(row[1 + dy_idx]) if dy_idx >= 0 else 0.0,
+                    float(row[1 + dz_idx]) if dz_idx >= 0 else 0.0,
                 )
 
-            if cal_fields is not None:
-                # Update pre-allocated dictionary in place for the last item
+            if last_row is not None:
+                # Update pre-allocated dictionary in place for the last item.
                 for idx, k in enumerate(field_keys):
-                    self._last_tel_data[k] = cal_fields[idx]
+                    self._last_tel_data[k] = last_row[1 + idx]
 
             if kin_rows and log_open:
                 logger.log_kinematics_batch(kin_rows)
@@ -202,15 +223,13 @@ class GenericWorker:
 
     def _inject_kinematics(self, hw_tel: dict) -> dict:
         eng = self.kinematic_engine
-        return {
-            **hw_tel,
-            "k_angle": round(eng.cum_dz, 2),
-            "k_turn_speed": round(eng.turn_speed, 2),
-            "k_move_speed": round(eng.move_speed, 2),
-            "k_disp": round(eng.cum_disp, 2),
-            "pos_x": round(getattr(eng, "pos_x", 0.0), 2),
-            "pos_y": round(getattr(eng, "pos_y", 0.0), 2),
-        }
+        hw_tel["k_angle"] = round(eng.cum_dz, 2)
+        hw_tel["k_turn_speed"] = round(eng.turn_speed, 2)
+        hw_tel["k_move_speed"] = round(eng.move_speed, 2)
+        hw_tel["k_disp"] = round(eng.cum_disp, 2)
+        hw_tel["pos_x"] = round(getattr(eng, "pos_x", 0.0), 2)
+        hw_tel["pos_y"] = round(getattr(eng, "pos_y", 0.0), 2)
+        return hw_tel
 
     @staticmethod
     def _sanitize_metrics(metrics: dict) -> dict:
@@ -283,7 +302,6 @@ class GenericWorker:
                 key=ABORT_KEY, func=lambda: setattr(self, "abort_flag", True)
             )
             logger = GroundTruthLogger(self.config.get("_output_dir", "."))
-            logger.log_event("session_config", clock.getTime(), seed=self.config.get("Random Seed"))
 
             debug = self.config.get("Debug Mode", False)
             screen_w_px = int(self.config.get("Screen Width (px)", 3840))
@@ -331,6 +349,10 @@ class GenericWorker:
                 self.config.get("Subject ID"),
                 first_session_num,
                 self.parser.get_headers(),
+            )
+            logger.log_event(
+                "session_config", clock.getTime(),
+                seed=self.config.get("Random Seed"),
             )
             # Pre-prepare first trial so SPACE triggers zero-delay rendering
             first_init_cmd = ""
@@ -629,11 +651,12 @@ class GenericWorker:
                 except Exception:
                     pass
 
-            # 取消底层 pipe 的阻塞等待
-            for q in (self.cmd_queue, self.telemetry_queue):
+            # The worker owns telemetry_queue as its producer.  Let its
+            # feeder thread finish writing queued terminal/event packets;
+            # cancel_join_thread() here could abandon those packets.
+            if self.cmd_queue:
                 try:
-                    if q is not None:
-                        q.cancel_join_thread()
+                    self.cmd_queue.cancel_join_thread()
                 except Exception:
                     pass
 

@@ -218,13 +218,9 @@ class ExperimentController:
         t = threading.Thread(target=_drain, daemon=True)
         t.start()
 
-    def _close_queues(self, prefix: str = ""):
-        """Close and drain experiment or calibration queues.
-
-        prefix="" for experiment queues, prefix="calib_" for calibration.
-        """
-        names = (f"{prefix}cmd_queue", f"{prefix}telemetry_queue")
-        for q_name in names:
+    def _close_queues(self) -> None:
+        """Cancel and drain the active experiment queues."""
+        for q_name in ("cmd_queue", "telemetry_queue"):
             q = getattr(self, q_name, None)
             if q is not None:
                 try:
@@ -232,27 +228,19 @@ class ExperimentController:
                 except (OSError, ValueError):
                     pass
                 self._drain_queue_async(q)
-                # Do NOT call q.close() here — the drain thread needs the
-                # queue open to consume remaining items.  The queue will be
-                # garbage-collected once the drain thread exits and this
-                # reference is cleared.
                 setattr(self, q_name, None)
 
-    def _kill_worker(self, proc: Optional[mp.Process], timeout: float = 4.0):
+    def _kill_worker(self, proc: Optional[mp.Process], timeout: float = 4.0) -> None:
         if proc is None:
             return
-        for q_attr in (
-            "cmd_queue", "telemetry_queue",
-            "calib_cmd_queue", "calib_telemetry_queue",
-        ):
-            q = getattr(self, q_attr, None)
-            if q is not None:
-                try:
-                    q.cancel_join_thread()
-                except Exception:
-                    pass
-        proc.join(timeout=timeout)
         if proc.is_alive():
+            proc.terminate()
+        proc.join(timeout=timeout)
+
+    def _terminate_worker_nonblocking(self) -> None:
+        """Request worker termination without joining on the UI event loop."""
+        proc = self.worker_process
+        if proc is not None and proc.is_alive():
             proc.terminate()
 
     # ------------------------------------------------------------------
@@ -333,13 +321,18 @@ class ExperimentController:
         self.worker_process.start()
 
     def stop_experiment(self) -> None:
-        """Send POISON_PILL to the stimulus worker."""
+        """Send POISON_PILL without blocking the UI event loop."""
         if self.cmd_queue:
             try:
-                self.cmd_queue.put(({"action": "POISON_PILL"}), timeout=1.0)
-            except (queue.Full, OSError):
-                # Queue full or broken — force-kill as fallback
-                self._kill_worker(self.worker_process)
+                self.cmd_queue.put_nowait({"action": "POISON_PILL"})
+            except queue.Full:
+                try:
+                    self.cmd_queue.get_nowait()
+                    self.cmd_queue.put_nowait({"action": "POISON_PILL"})
+                except Exception:
+                    self._terminate_worker_nonblocking()
+            except (BrokenPipeError, EOFError, OSError, ValueError):
+                self._terminate_worker_nonblocking()
 
     def cleanup_worker(self) -> None:
         """Clean up after worker dies. Call when poll_telemetry reports worker_died."""

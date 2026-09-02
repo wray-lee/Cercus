@@ -124,19 +124,27 @@ class AppState:
         self._update_trajectory(data.get("phase", ""), ui_metrics)
 
     def _update_trajectory(self, raw_phase: str, ui_metrics: dict):
-        # Phase-change reset
+        # Keep one trail for all phases within a trial; reset only at a
+        # waiting/interval boundary or when the session/trial changes.
         raw_phase = str(raw_phase or '')
-        base_phase = raw_phase
         if raw_phase.startswith("ITI"):
-            base_phase = "ITI"
+            trail_epoch = "ITI"
         elif raw_phase.startswith("ISI"):
-            base_phase = "ISI"
+            trail_epoch = "ISI"
         elif raw_phase.startswith("Kinematic"):
-            base_phase = "Kinematic"
+            trail_epoch = "Kinematic"
+        elif raw_phase.startswith(("Wait", "WAIT")):
+            trail_epoch = "WAIT"
+        elif raw_phase in ("Adaptation", "Initial Baseline", "IDLE", "ABORTING", ""):
+            trail_epoch = raw_phase
+        else:
+            session = self.session_num if self.session_num not in ("—", None) else 0
+            trial = self.trial_idx if self.trial_idx not in ("—", None) else 0
+            trail_epoch = f"TRIAL_{session}_{trial}"
 
-        if base_phase != self._trail_last_phase:
+        if trail_epoch != self._trail_last_phase:
             self._reset_trail()
-            self._trail_last_phase = base_phase
+            self._trail_last_phase = trail_epoch
 
         # Angle — always update (before draw, not lagged)
         try:
