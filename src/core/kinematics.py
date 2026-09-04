@@ -15,6 +15,11 @@ class KinematicEngine:
     # Paradigms may override via evaluate_trigger's quiet_threshold parameter.
     QUIET_SPEED_THRESHOLD: float = 10.0
 
+    # Noise mitigation: use v1.0.0 conservative parameters (0.030s gate, 15.0 threshold)
+    # to expand safety margin between noise floor and trigger threshold.
+    # Set False to use tighter parameters (0.005s gate, current QUIET_SPEED_THRESHOLD).
+    USE_CONSERVATIVE_NOISE_PARAMS: bool = True
+
     # Pre-allocated slot names (documented for clarity; all are plain floats)
     __slots__ = (
         "_error_cb",
@@ -196,13 +201,14 @@ class KinematicEngine:
         self._last_t = t
 
         # --- frame-rate buffering: accumulate raw deltas, skip speed update
-        #     until >= 5ms of wall time has elapsed (dt folding protection) ---
+        #     until >= threshold of wall time has elapsed (dt folding protection) ---
         self._buf_dt += dt
         self._buf_dx += dx
         self._buf_dy += dy
         self._buf_dz += dz
 
-        if self._buf_dt < 0.005:
+        buf_gate = 0.030 if self.USE_CONSERVATIVE_NOISE_PARAMS else 0.005
+        if self._buf_dt < buf_gate:
             return
 
         # use buffered values for speed calculation
@@ -225,7 +231,8 @@ class KinematicEngine:
         if self._speed_threshold_active >= 0.0:
             if self._speed_threshold_active == 0.0:
                 # stationary trigger: any movement resets the timer
-                if self._move_speed > self.QUIET_SPEED_THRESHOLD:
+                quiet_thresh = 15.0 if self.USE_CONSERVATIVE_NOISE_PARAMS else self.QUIET_SPEED_THRESHOLD
+                if self._move_speed > quiet_thresh:
                     self._speed_above_since = -1.0
                 elif self._speed_above_since < 0.0:
                     self._speed_above_since = t

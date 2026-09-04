@@ -209,7 +209,13 @@ def _stop(controller, state, stop_btn):
 
 
 def _yield_focus_to_psychopy():
-    """Yield foreground focus to PsychoPy without hiding the dashboard."""
+    """Yield foreground focus to PsychoPy without hiding the dashboard.
+
+    Windows only allows the foreground process to call SetForegroundWindow.
+    Since PsychoPy runs in a child process, we use AttachThreadInput to
+    temporarily share input queues, which grants SetForegroundWindow
+    permission across processes.
+    """
     import sys
     if sys.platform != 'win32':
         return
@@ -220,17 +226,81 @@ def _yield_focus_to_psychopy():
         try:
             import ctypes
             import ctypes.wintypes
+            import os
             user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+
             user32.FindWindowW.restype = ctypes.wintypes.HWND
             user32.FindWindowW.argtypes = [ctypes.wintypes.LPCWSTR, ctypes.wintypes.LPCWSTR]
             user32.ShowWindow.argtypes = [ctypes.wintypes.HWND, ctypes.c_int]
             user32.ShowWindow.restype = ctypes.wintypes.BOOL
-            hwnd = user32.FindWindowW(None, 'Cercus')
-            if not hwnd:
-                return  # Window not found — don't touch unrelated windows
-            user32.ShowWindow(hwnd, 6)   # SW_MINIMIZE
-            time.sleep(0.8)
-            user32.ShowWindow(hwnd, 4)   # SW_SHOWNOACTIVATE
+            user32.SetForegroundWindow.argtypes = [ctypes.wintypes.HWND]
+            user32.SetForegroundWindow.restype = ctypes.wintypes.BOOL
+            user32.GetWindowThreadProcessId.argtypes = [
+                ctypes.wintypes.HWND, ctypes.POINTER(ctypes.wintypes.DWORD)
+            ]
+            user32.GetWindowThreadProcessId.restype = ctypes.wintypes.DWORD
+            user32.AttachThreadInput.argtypes = [
+                ctypes.wintypes.DWORD, ctypes.wintypes.DWORD, ctypes.wintypes.BOOL
+            ]
+            user32.AttachThreadInput.restype = ctypes.wintypes.BOOL
+            user32.BringWindowToTop.argtypes = [ctypes.wintypes.HWND]
+            user32.BringWindowToTop.restype = ctypes.wintypes.BOOL
+            user32.IsWindowVisible.argtypes = [ctypes.wintypes.HWND]
+            user32.IsWindowVisible.restype = ctypes.wintypes.BOOL
+            user32.GetWindowTextW.argtypes = [
+                ctypes.wintypes.HWND, ctypes.wintypes.LPWSTR, ctypes.c_int
+            ]
+            user32.GetWindowTextW.restype = ctypes.c_int
+            user32.EnumWindows.argtypes = [ctypes.WINFUNCTYPE(
+                ctypes.wintypes.BOOL, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM
+            ), ctypes.wintypes.LPARAM]
+            user32.EnumWindows.restype = ctypes.wintypes.BOOL
+
+            our_hwnd = user32.FindWindowW(None, 'Cercus')
+            our_pid = os.getpid()
+
+            # Find PsychoPy window: visible, not ours, belongs to a child process
+            EnumProc = ctypes.WINFUNCTYPE(
+                ctypes.wintypes.BOOL, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM
+            )
+            psychopy_hwnd = ctypes.wintypes.HWND(0)
+
+            def _enum_cb(hwnd, _lparam):
+                nonlocal psychopy_hwnd
+                if not user32.IsWindowVisible(hwnd):
+                    return True
+                if hwnd == our_hwnd:
+                    return True
+                pid = ctypes.wintypes.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                if pid.value == our_pid:
+                    return True
+                # Accept any visible window from a different process —
+                # PsychoPy's pyglet window often has an empty title
+                psychopy_hwnd = hwnd
+                return False
+
+            user32.EnumWindows(EnumProc(_enum_cb), 0)
+
+            if not psychopy_hwnd:
+                return
+
+            # AttachThreadInput trick: share input queue so we can
+            # call SetForegroundWindow from the main process
+            our_tid = kernel32.GetCurrentThreadId()
+            target_tid = user32.GetWindowThreadProcessId(psychopy_hwnd, None)
+            attached = False
+            if our_tid != target_tid:
+                attached = bool(user32.AttachThreadInput(our_tid, target_tid, True))
+
+            try:
+                user32.BringWindowToTop(psychopy_hwnd)
+                user32.SetForegroundWindow(psychopy_hwnd)
+            finally:
+                if attached:
+                    user32.AttachThreadInput(our_tid, target_tid, False)
+
         except Exception:
             pass
 
