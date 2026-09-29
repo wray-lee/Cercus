@@ -28,13 +28,67 @@ class CoreRenderer:
         self.objects: Dict[str, Any] = {}
         self.visual = visual
 
-        # Auto-focus the PsychoPy window (replicate v1.0.0 behaviour where
-        # the stimulus window grabbed focus so SPACE was immediately captured)
-        try:
-            if hasattr(self.win, 'winHandle') and hasattr(self.win.winHandle, 'activate'):
-                self.win.winHandle.activate()
-        except Exception:
-            pass
+        # Auto-focus the PsychoPy window and make it topmost.
+        # Windows severely restricts SetForegroundWindow. The only reliable
+        # way is to synthesize a mouse click on our window, which counts as
+        # "user input" and grants foreground permission.
+        import sys
+        if sys.platform == 'win32':
+            import ctypes
+            import threading
+            hwnd = getattr(self.win.winHandle, '_hwnd', None)
+            if hwnd:
+                def _setup_focus():
+                    import time
+                    # Wait for window to be fully shown and rendered
+                    time.sleep(0.5)
+
+                    user32 = ctypes.windll.user32
+                    HWND_TOPMOST = -1
+                    SWP_NOMOVE = 0x0002
+                    SWP_NOSIZE = 0x0001
+                    SWP_SHOWWINDOW = 0x0040
+
+                    try:
+                        # Make window topmost so it's visible above everything
+                        user32.SetWindowPos(
+                            hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                        )
+
+                        time.sleep(0.1)
+
+                        # Get window position for mouse click
+                        rect = ctypes.wintypes.RECT()
+                        if user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                            # Click center of window
+                            x = (rect.left + rect.right) // 2
+                            y = (rect.top + rect.bottom) // 2
+
+                            # Move cursor to window center
+                            user32.SetCursorPos(x, y)
+                            time.sleep(0.08)
+
+                            # Synthesize mouse click (down + up)
+                            MOUSEEVENTF_LEFTDOWN = 0x0002
+                            MOUSEEVENTF_LEFTUP = 0x0004
+                            user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                            time.sleep(0.03)
+                            user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+
+                            # Now SetForegroundWindow should work
+                            time.sleep(0.05)
+                            user32.SetForegroundWindow(hwnd)
+                    except Exception:
+                        pass
+
+                threading.Thread(target=_setup_focus, daemon=True).start()
+        else:
+            try:
+                if hasattr(self.win, 'winHandle') and hasattr(self.win.winHandle, 'activate'):
+                    self.win.winHandle.activate()
+            except Exception:
+                pass
 
     _TYPE_MAP: Dict[str, str] = {
         "circle": "Circle",
