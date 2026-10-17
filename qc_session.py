@@ -10,8 +10,8 @@ Exit 0 = animal PASS, 1 = FAIL, 2 = usage error.
 from __future__ import annotations
 
 import glob
-import json
 import os
+import re
 import sys
 
 import numpy as np
@@ -23,8 +23,11 @@ PULSE_MIN_MS, PULSE_MAX_MS = 100.0, 400.0
 
 if os.name == "nt":
     os.system("")  # enable ANSI VT processing on Windows consoles
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 _COLOR = sys.stdout.isatty()
-GREEN, RED, YELLOW, BOLD = "32", "31", "33", "1"
+GREEN, RED, YELLOW, BOLD, DIM = "32", "31", "33", "1", "2"
+SEP = "─" * 72
 
 
 def paint(text: str, code: str) -> str:
@@ -121,6 +124,7 @@ def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], di
         nominal = float(ttc.dropna().iloc[0]) if ttc.notna().any() else None
         med = float(np.median(onsets))
         info["onset_med_ms"] = med
+        info["nominal_ms"] = nominal
         if nominal is not None and abs(med - nominal) > ONSET_TOL_MS:
             fails.append(f"wind onset median {med:.0f} ms vs nominal {nominal:.0f}")
         odd = [(t, d) for t, d in durs_detail
@@ -177,7 +181,9 @@ def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], di
     exact = float(np.abs(res).max()) <= 1e-9 * scale
     info.update(dx_std=float(dx.std()), crosstalk_exact=bool(exact),
                 dy_std=float(dy.std()), dz_std=float(dz.std()))
-    if exact and (dy.std() > 0.003 or dz.std() > 0.003):
+    x_dead = exact and (dy.std() > 0.003 or dz.std() > 0.003)
+    info["x_dead"] = bool(x_dead)
+    if x_dead:
         fails.append("x channel dead (raw dx == 0; recorded dx is only "
                      "calibration cross-talk)")
     if dy.std() <= 0.003:
@@ -196,45 +202,118 @@ def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], di
     return fails, warns, info
 
 
+TTC_LABEL = {
+    -373: "30° (-373 ms)", -308: "36° (-308 ms)",
+    -261: "42° (-261 ms)", -225: "48° (-225 ms)",
+    -119: "80° (-119 ms)", 0: "180° (0 ms)", 200: "+200 ms",
+}
+
+
+def _parse_name(name: str) -> tuple[str, str, str, str]:
+    m = re.match(r"(.*?)cricket(?:_001)?_(\d{8})_(\d{6})_session_(\d)", name)
+    if not m:
+        return "?", "?", "?", "?"
+    d = m.group(2)
+    return (m.group(1) or "?", f"{d[:4]}-{d[4:6]}-{d[6:]}",
+            m.group(3), m.group(4))
+
+
+def _paradigm(info: dict) -> str:
+    types = info.get("types") or {}
+    if "baseline_visual" in types:
+        return "visual only (bv)"
+    if "baseline_wind" in types:
+        return "wind only (bw)"
+    for k in (info.get("ttc") or {}):
+        try:
+            n = int(k)
+        except (TypeError, ValueError):
+            continue
+        return TTC_LABEL.get(n, f"ttc {n} ms")
+    return "?"
+
+
+def _responses(info: dict) -> str:
+    r = info.get("responses") or {}
+    return ", ".join(f"{k} {v}" for k, v in sorted(r.items())) if r else "no verdicts"
+
+
+def _session_line(sess: str, fails: list[str], info: dict) -> str:
+    ok = not fails
+    dead = bool(info.get("x_dead"))
+    onset, nom = info.get("onset_med_ms"), info.get("nominal_ms")
+    if onset is not None and nom is not None:
+        onset_s = f"onset {onset:+.0f} ms (nom {nom:+.0f})"
+    elif onset is not None:
+        onset_s = f"onset {onset:+.0f} ms"
+    else:
+        onset_s = "onset n/a"
+    n = int(info.get("trials", 0))
+    wind = int(info.get("wind_pulses", 0))
+    dur = float(info.get("duration_min", 0.0))
+    status = "✅" if ok else "❌"
+    dx = "dx DEAD" if dead else "dx OK"
+    line = (f"  {status}  session {sess}   {n:2d}/18 trials   "
+            f"{wind:2d}/{n} wind   {onset_s:24s} {dur:5.1f} min   "
+            f"{dx:8s} {_responses(info)}")
+    line = line.replace(status, paint(status, GREEN if ok else RED), 1)
+    if dead:
+        line = line.replace(dx, paint(dx, RED), 1)
+    return line
+
+
 def main(folder: str) -> int:
     evs = sorted(glob.glob(os.path.join(folder, "*_events.csv")))
     if not evs:
         print(f"no events files in {folder}")
         return 2
-    if len(evs) != 2:
-        print(paint(f"warn: {len(evs)} session(s) in folder (an animal needs 2)", YELLOW))
-    all_fails = 0
+
+    groups: dict[tuple[str, str, str], list[tuple[str, str]]] = {}
     for ev_path in evs:
-        kin_path = ev_path.replace("_events.csv", "_kinematics.csv")
         name = os.path.basename(ev_path)
-        if not os.path.exists(kin_path):
-            print(f"{name}: {paint('FAIL', RED)} missing kinematics")
-            all_fails += 1
-            continue
-        if os.path.getsize(ev_path) == 0:
-            print(f"{name}: {paint('FAIL', RED)} events file is empty "
-                  "(session not closed normally)")
-            all_fails += 1
-            continue
-        fails, warns, info = check_session(ev_path, kin_path)
-        status = paint("PASS", GREEN) if not fails else paint("FAIL", RED)
-        if fails:
-            all_fails += 1
-        print(f"{name}: {status}")
-        print(f"  trials={info.get('trials')} wind={info.get('wind_pulses')} "
-              f"onset={info.get('onset_med_ms', float('nan')):.1f} ms "
-              f"dur={info.get('duration_min', 0):.1f} min "
-              f"dx={info.get('dx_std', 0):.5f} "
-              f"exact={info.get('crosstalk_exact')} "
-              f"responses={info.get('responses')}")
-        for f in fails:
-            print("  " + paint(f"FAIL: {f}", RED))
-        for w in warns:
-            print("  " + paint(f"warn: {w}", YELLOW))
-    verdict = paint("PASS", GREEN) if all_fails == 0 else paint(
-        f"FAIL ({all_fails} session(s))", RED)
-    print(paint("ANIMAL: ", BOLD) + verdict)
-    return 0 if all_fails == 0 else 1
+        animal, date, time, sess = _parse_name(name)
+        groups.setdefault((animal, date, time), []).append((sess, ev_path))
+
+    n_pass = 0
+    for (animal, date, _time), items in sorted(groups.items()):
+        results = []
+        for sess, ev_path in sorted(items):
+            kin_path = ev_path.replace("_events.csv", "_kinematics.csv")
+            if not os.path.exists(kin_path):
+                results.append((sess, ["missing kinematics file"], [], {}))
+            elif os.path.getsize(ev_path) == 0:
+                results.append((sess, ["events file is empty (session not "
+                                       "closed normally)"], [], {}))
+            else:
+                results.append((sess, *check_session(ev_path, kin_path)))
+        paradigm = _paradigm(results[0][3]) if results else "?"
+        print()
+        print(paint(f"🦗  {animal}   ·   {paradigm}   ·   {date}", BOLD))
+        print(paint(SEP, DIM))
+        animal_fail = False
+        if len(results) != 2:
+            print("      " + paint(
+                f"⚠️   {len(results)} session(s) found (an animal needs 2)",
+                YELLOW))
+        for sess, fails, warns, info in results:
+            if fails:
+                animal_fail = True
+            print(_session_line(sess, fails, info))
+            for f in fails:
+                print("      " + paint(f"❌   {f}", RED))
+            for w in warns:
+                print("      " + paint(f"⚠️   {w}", YELLOW))
+        print(paint(SEP, DIM))
+        if animal_fail:
+            print("  " + paint("🏁  RESULT  FAIL", "1;31"))
+        else:
+            n_pass += 1
+            print("  " + paint("🏁  RESULT  PASS", "1;32"))
+    print()
+    total = len(groups)
+    print(paint(f"📊  SUMMARY   {n_pass}/{total} animals PASS",
+                "1;32" if n_pass == total else "1;31"))
+    return 0 if n_pass == total else 1
 
 
 if __name__ == "__main__":
