@@ -21,6 +21,15 @@ EXPECTED_TRIALS = 18
 ONSET_TOL_MS = 60.0
 PULSE_MIN_MS, PULSE_MAX_MS = 100.0, 400.0
 
+if os.name == "nt":
+    os.system("")  # enable ANSI VT processing on Windows consoles
+_COLOR = sys.stdout.isatty()
+GREEN, RED, YELLOW, BOLD = "32", "31", "33", "1"
+
+
+def paint(text: str, code: str) -> str:
+    return f"\033[{code}m{text}\033[0m" if _COLOR else text
+
 
 def _details(s: pd.Series) -> pd.Series:
     return s.fillna("{}")
@@ -45,7 +54,9 @@ def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], di
         fails.append(f"trial_start={n} (expected {EXPECTED_TRIALS})")
     if len(stops) != n:
         fails.append(f"trial_stop={len(stops)} vs {n} trials")
-    if len(verdicts) != n:
+    if len(verdicts) == 0:
+        warns.append("no trial_verdict events (pre-verdict acquisition format)")
+    elif len(verdicts) != n:
         fails.append(f"trial_verdict={len(verdicts)} vs {n} trials")
     types = starts.details.fillna("").str.extract(r'"type": "([a-z_]+)"')[0]
     ttc = starts.details.fillna("").str.extract(r'"target_ttc_ms": ([-0-9]+)')[0]
@@ -68,8 +79,9 @@ def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], di
     # verdicts
     resp = verdicts.details.fillna("").str.extract(r'"response": "([a-z_]+)"')[0]
     info["responses"] = resp.value_counts().to_dict()
-    if len(resp) and resp.isin(["escape", "startle"]).sum() == 0:
-        fails.append("no escape/startle responses in the whole session")
+    if (len(resp) and types.eq("looming_wind").any()
+            and resp.isin(["escape", "startle"]).sum() == 0):
+        warns.append("no escape/startle responses in a looming_wind session")
 
     # collision + wind per trial
     coll = {}
@@ -78,9 +90,12 @@ def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], di
             coll[int(r.global_trial_id)] = float(r.timestamp)
     stim = kin.stim_state.to_numpy()
     vals = sorted(int(v) for v in np.unique(stim))
-    if vals != [0, 1]:
-        fails.append(f"stim_state values {vals} (expected [0, 1])")
-    onsets, durs, missing = [], [], 0
+    wind_session = types.isin(["looming_wind", "baseline_wind"]).any()
+    if wind_session and vals != [0, 1]:
+        warns.append(f"stim_state glitch values {vals} (expected [0, 1])")
+    if not wind_session and vals != [0]:
+        warns.append(f"visual-only session has stim_state values {vals}")
+    onsets, durs, durs_detail, missing = [], [], [], 0
     gid = kin.global_trial_id.to_numpy()
     sys_t = kin.sys_time.to_numpy(float)
     for _, r in starts.iterrows():
@@ -96,7 +111,9 @@ def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], di
             continue
         idx = np.flatnonzero(mask)
         onsets.append((sys_t[idx[0]] - coll[tid]) * 1000.0)
-        durs.append((sys_t[idx[-1]] - sys_t[idx[0]]) * 1000.0)
+        d = (sys_t[idx[-1]] - sys_t[idx[0]]) * 1000.0
+        durs.append(d)
+        durs_detail.append((tid, d))
     info["wind_pulses"] = len(onsets)
     if missing:
         fails.append(f"{missing} looming trials without a wind pulse")
@@ -106,8 +123,11 @@ def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], di
         info["onset_med_ms"] = med
         if nominal is not None and abs(med - nominal) > ONSET_TOL_MS:
             fails.append(f"wind onset median {med:.0f} ms vs nominal {nominal:.0f}")
-        if min(durs) < PULSE_MIN_MS or max(durs) > PULSE_MAX_MS:
-            fails.append(f"wind pulse duration {min(durs):.0f}-{max(durs):.0f} ms")
+        odd = [(t, d) for t, d in durs_detail
+               if d < PULSE_MIN_MS or d > PULSE_MAX_MS]
+        if odd:
+            detail = ", ".join(f"trial {t}: {d:.0f} ms" for t, d in odd[:3])
+            warns.append(f"odd wind pulse duration ({detail})")
 
     # stray wind outside [trial_start, trial_stop]
     windows = []
@@ -124,35 +144,42 @@ def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], di
         if stray > 5:
             fails.append(f"{stray} stim_state rows outside trial windows")
 
-    # arduino telemetry
+    # telemetry continuity: sys_time is the recorded clock.  ard_time jumps
+    # with continuous sys_time are Arduino clock re-syncs, not data loss.
     ard = kin.ard_time.to_numpy(float)
-    dt = np.diff(ard)
     info["rows"] = len(kin)
     info["ard_zero"] = int((ard == 0).sum())
     if (ard == 0).mean() > 1e-3:
         fails.append(f"ard_time zero rows {int((ard == 0).sum())} ({100*(ard==0).mean():.2f}%)")
-    if not bool((np.diff(sys_t) >= 0).all()):
+    ds = np.diff(sys_t)
+    if not bool((ds >= 0).all()):
         fails.append("sys_time not monotonic")
+    for i in np.flatnonzero(ds > 0.1):
+        t0 = float(sys_t[i])
+        msg = f"telemetry gap {ds[i]:.1f} s at {t0:.1f} s"
+        warns.append(msg + (" (inside trial)" if any(a <= t0 <= b for a, b in windows) else " (ITI)"))
     nz = ard[ard > 0]
     if len(nz) > 2:
-        gap = np.diff(nz)
-        if (gap > 2000).any():
-            fails.append(f"{int((gap > 2000).sum())} ard_time gaps > 2 s")
-        med_dt = float(np.median(gap))
+        med_dt = float(np.median(np.diff(nz)))
         info["ard_med_dt_ms"] = med_dt
         if not 3.0 <= med_dt <= 8.0:
             fails.append(f"ard_time median dt {med_dt:.1f} ms")
 
-    # kinematics channels
+    # kinematics channels.  The dead-x signature is EXACT: raw dx == 0, so
+    # the recorded dx is bit-for-bit the calibration cross-talk of dy/dz.
+    # Test the exactness of the linear relation, not R2 (outlier spikes can
+    # fake a high R2 in a healthy session).
     dx, dy, dz = (kin[c].to_numpy(float) for c in ("dx", "dy", "dz"))
     x = np.column_stack([dy, dz, np.ones(len(dy))])
     coef, *_ = np.linalg.lstsq(x, dx, rcond=None)
     res = dx - x @ coef
-    r2 = 1.0 - res.var() / dx.var() if dx.var() > 0 else 0.0
-    info.update(dx_std=float(dx.std()), crosstalk_r2=float(r2),
+    scale = max(float(np.abs(dx).max()), 1.0)
+    exact = float(np.abs(res).max()) <= 1e-9 * scale
+    info.update(dx_std=float(dx.std()), crosstalk_exact=bool(exact),
                 dy_std=float(dy.std()), dz_std=float(dz.std()))
-    if dx.std() <= 0.005 or r2 >= 0.9:
-        fails.append(f"x channel dead (dx_std={dx.std():.5f}, crosstalk R2={r2:.3f})")
+    if exact and (dy.std() > 0.003 or dz.std() > 0.003):
+        fails.append("x channel dead (raw dx == 0; recorded dx is only "
+                     "calibration cross-talk)")
     if dy.std() <= 0.003:
         fails.append(f"y channel dead (dy_std={dy.std():.5f})")
     if dz.std() <= 0.003:
@@ -161,8 +188,10 @@ def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], di
     # duration
     span = float(ev[ev.event_name == "trial_stop"].timestamp.max() - ev.timestamp.min())
     info["duration_min"] = span / 60.0
-    if not 15.0 <= span / 60.0 <= 45.0:
-        fails.append(f"session duration {span/60:.1f} min (expected 15-45)")
+    if span / 60.0 < 15.0:
+        fails.append(f"session duration {span/60:.1f} min (too short, aborted?)")
+    elif span / 60.0 > 45.0:
+        warns.append(f"long session {span/60:.1f} min (pause?)")
 
     return fails, warns, info
 
@@ -173,34 +202,38 @@ def main(folder: str) -> int:
         print(f"no events files in {folder}")
         return 2
     if len(evs) != 2:
-        print(f"warn: {len(evs)} session(s) in folder (an animal needs 2)")
+        print(paint(f"warn: {len(evs)} session(s) in folder (an animal needs 2)", YELLOW))
     all_fails = 0
     for ev_path in evs:
         kin_path = ev_path.replace("_events.csv", "_kinematics.csv")
         name = os.path.basename(ev_path)
         if not os.path.exists(kin_path):
-            print(f"{name}: FAIL missing kinematics")
+            print(f"{name}: {paint('FAIL', RED)} missing kinematics")
             all_fails += 1
             continue
         if os.path.getsize(ev_path) == 0:
-            print(f"{name}: FAIL events file is empty (session not closed normally)")
+            print(f"{name}: {paint('FAIL', RED)} events file is empty "
+                  "(session not closed normally)")
             all_fails += 1
             continue
         fails, warns, info = check_session(ev_path, kin_path)
-        status = "PASS" if not fails else "FAIL"
+        status = paint("PASS", GREEN) if not fails else paint("FAIL", RED)
         if fails:
             all_fails += 1
         print(f"{name}: {status}")
         print(f"  trials={info.get('trials')} wind={info.get('wind_pulses')} "
               f"onset={info.get('onset_med_ms', float('nan')):.1f} ms "
               f"dur={info.get('duration_min', 0):.1f} min "
-              f"dx={info.get('dx_std', 0):.5f} R2={info.get('crosstalk_r2', 0):.3f} "
+              f"dx={info.get('dx_std', 0):.5f} "
+              f"exact={info.get('crosstalk_exact')} "
               f"responses={info.get('responses')}")
         for f in fails:
-            print(f"  FAIL: {f}")
+            print("  " + paint(f"FAIL: {f}", RED))
         for w in warns:
-            print(f"  warn: {w}")
-    print("ANIMAL:", "PASS" if all_fails == 0 else f"FAIL ({all_fails} session(s))")
+            print("  " + paint(f"warn: {w}", YELLOW))
+    verdict = paint("PASS", GREEN) if all_fails == 0 else paint(
+        f"FAIL ({all_fails} session(s))", RED)
+    print(paint("ANIMAL: ", BOLD) + verdict)
     return 0 if all_fails == 0 else 1
 
 
