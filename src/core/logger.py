@@ -209,6 +209,9 @@ class GroundTruthLogger:
                         *head, details = payload
                         row = [*head, json.dumps(details, cls=NumpyEncoder) if details else ""]
                         self._event_writer.writerow(row)
+                        # Events are sparse and never fill the buffer like kinematics
+                        # does; flush each so an abnormal exit can't lose the session.
+                        self._event_file.flush()
 
                 elif action == "flush_kin":
                     self._drain_pending_kinematics()

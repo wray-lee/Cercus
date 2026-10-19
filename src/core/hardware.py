@@ -275,6 +275,13 @@ class SerialDaemon:
                         self._serial.write(cmd.encode("ascii"))
             except Exception:
                 pass
+        # Best-effort disarm: force all valves + TTL LOW so the firmware
+        # returns to IDLE before stop() closes the port.
+        try:
+            if self._serial and getattr(self._serial, "is_open", False):
+                self._serial.write(b"<X,0>")
+        except Exception:
+            pass
 
     def send_command(self, cmd: Union[str, bytes]) -> None:
         try:

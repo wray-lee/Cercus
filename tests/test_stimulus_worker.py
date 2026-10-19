@@ -389,6 +389,7 @@ def test_worker_run_hardware_disconnect_and_general_exception() -> None:
             actions.append((item.get("action"), item.get("error")))
 
         assert any(a[0] == "worker_error" and "Hardware failure" in (a[1] or "") for a in actions)
+        assert mock_serial.stop.called
 
         cmd_q.cancel_join_thread()
         tel_q.cancel_join_thread()
