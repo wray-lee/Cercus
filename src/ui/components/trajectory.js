@@ -4,6 +4,15 @@
 
 (function(){
   const lastSigs = {};
+  const lastData = {};
+  // Python only pushes on data change; redraw on resize so the browser never
+  // stretches a stale bitmap (window resize / page zoom).
+  const ro = new ResizeObserver(entries => {
+    for (const e of entries) {
+      const d = lastData[e.target.id];
+      if (d) window.cercusTraj(d);
+    }
+  });
 
   // v1.0.0 sizeCanvas: compute pixel buffer from cssW + model aspect ratio.
   // Does NOT trust clientHeight — derives it from clientWidth.
@@ -19,6 +28,8 @@
   window.cercusTraj = function(data) {
     const cv = document.getElementById(data.canvasId);
     if (!cv) return;
+    if (!cv._trajObserved) { ro.observe(cv); cv._trajObserved = true; }
+    lastData[data.canvasId] = data;
 
     // sizeCanvas BEFORE signature check — resize must happen even when data is unchanged
     const ctx = cv.getContext('2d');
@@ -39,12 +50,9 @@
 
     const W = 150, H = 150;
 
-    let dec = pts;
-    if (pts.length > 200) {
-      const step = Math.ceil(pts.length / 200);
-      dec = pts.filter((_, i) => i % step === 0);
-      if (dec[dec.length - 1] !== pts[pts.length - 1]) dec.push(pts[pts.length - 1]);
-    }
+    // No decimation: index-modulo sampling over a growing/sliding window picks a
+    // different subset every frame → jelly wobble. ≤1000 points is cheap to draw.
+    const dec = pts;
     if (dec.length < 2) {
       // Draw arrow at center even with no trail
       if (angle !== 0 || pts.length > 0) {

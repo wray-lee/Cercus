@@ -34,6 +34,12 @@ class BaseParadigm(ABC):
         np.random.seed(seed)
         config["Random Seed"] = seed
 
+    @staticmethod
+    def _collision_time_s(lv_s: float, init_deg: float) -> float:
+        """Looming lead time from init_deg to collision: t = l/v · cot(θ0/2)."""
+        t = math.tan(math.radians(init_deg / 2))
+        return lv_s / t if t != 0 else 0.0
+
     @classmethod
     def _schema_default(cls, key: str) -> Any:
         return cls.get_parameter_schema()[key]["default"]
@@ -287,51 +293,59 @@ class BaseParadigm(ABC):
 class LoomingParadigm(BaseParadigm):
     """Multi-looming stimulus paradigm with expanding visual discs and wind triggers."""
 
+    # Label angle = 2·atan(l/v ÷ |TTC|); retitle every pattern if this changes.
+    LV_RATIO_MS = 120
+
     EXPERIMENT_PATTERNS = {
         "Baseline Visual": {
             "type": "baseline_visual",
             "target_ttc_ms": None,
-            "lv_ratio_ms": 120,
+            "lv_ratio_ms": LV_RATIO_MS,
         },
         "Baseline Wind": {
             "type": "baseline_wind",
             "target_ttc_ms": None,
             "lv_ratio_ms": None,
         },
-        "Looming + Wind (TTC -373ms / 30°)": {
+        "Looming + Wind (TTC -541ms / 25°)": {
+            "type": "looming_wind",
+            "target_ttc_ms": -541,
+            "lv_ratio_ms": LV_RATIO_MS,
+        },
+        "Looming + Wind (TTC -373ms / 35.7°)": {
             "type": "looming_wind",
             "target_ttc_ms": -373,
-            "lv_ratio_ms": 120,
+            "lv_ratio_ms": LV_RATIO_MS,
         },
-        "Looming + Wind (TTC -308ms / 36°)": {
+        "Looming + Wind (TTC -308ms / 42.6°)": {
             "type": "looming_wind",
             "target_ttc_ms": -308,
-            "lv_ratio_ms": 120,
+            "lv_ratio_ms": LV_RATIO_MS,
         },
-        "Looming + Wind (TTC -261ms / 42°)": {
+        "Looming + Wind (TTC -261ms / 49.4°)": {
             "type": "looming_wind",
             "target_ttc_ms": -261,
-            "lv_ratio_ms": 120,
+            "lv_ratio_ms": LV_RATIO_MS,
         },
-        "Looming + Wind (TTC -225ms / 48°)": {
+        "Looming + Wind (TTC -225ms / 56.1°)": {
             "type": "looming_wind",
             "target_ttc_ms": -225,
-            "lv_ratio_ms": 120,
+            "lv_ratio_ms": LV_RATIO_MS,
         },
-        "Looming + Wind (TTC -119ms / 80°)": {
+        "Looming + Wind (TTC -119ms / 90.5°)": {
             "type": "looming_wind",
             "target_ttc_ms": -119,
-            "lv_ratio_ms": 120,
+            "lv_ratio_ms": LV_RATIO_MS,
         },
         "Looming + Wind (TTC 0ms / 180°)": {
             "type": "looming_wind",
             "target_ttc_ms": 0,
-            "lv_ratio_ms": 120,
+            "lv_ratio_ms": LV_RATIO_MS,
         },
         "Looming + Wind (TTC +200ms)": {
             "type": "looming_wind",
             "target_ttc_ms": 200,
-            "lv_ratio_ms": 120,
+            "lv_ratio_ms": LV_RATIO_MS,
         },
     }
 
@@ -533,21 +547,19 @@ class LoomingParadigm(BaseParadigm):
             wind_dir = trial_context.get("wind_dir", "none")
             if wind_dir == "none":
                 return ""
-            lv_s = trial_context.get("lv_ratio_ms", 100) / 1000.0
-            init_rad = math.radians(self.init_deg / 2)
-            t_col_s = lv_s / math.tan(init_rad) if math.tan(init_rad) != 0 else 0
+            lv_s = trial_context.get("lv_ratio_ms", self.LV_RATIO_MS) / 1000.0
+            t_col_s = self._collision_time_s(lv_s, self.init_deg)
             delay_ms = max(
                 0, int(round(t_col_s * 1000)) + trial_context["target_ttc_ms"]
             )
             dir_char = "R" if wind_dir == "right" else "L"
             return f"<{dir_char},{delay_ms}>"
         elif trial_context["type"] == "baseline_wind":
-            # 使用默认 looming 参数 (100ms, 2°) 计算等效静默期
-            lv_s = 100 / 1000.0
-            init_rad = math.radians(2.0 / 2)
-            t_col_s = lv_s / math.tan(init_rad) if math.tan(init_rad) != 0 else 0
+            # 使用 looming 同一 l/v 计算等效静默期
+            lv_s = self.LV_RATIO_MS / 1000.0
+            t_col_s = self._collision_time_s(lv_s, self.init_deg)
 
-            # baseline_delay 严格对齐 looming 的前导时间 (约 5.72秒)
+            # baseline_delay 严格对齐 looming 的前导时间 (约 6.88秒)
             self._baseline_delay = t_col_s
             self._baseline_post = random.uniform(1.0, 2.0)
 
@@ -619,9 +631,8 @@ class LoomingParadigm(BaseParadigm):
         wind_active = 0
 
         if t_type in ["looming_wind", "baseline_visual"]:
-            lv_s = trial_context.get("lv_ratio_ms", 100) / 1000.0
-            init_rad = math.radians(self.init_deg / 2)
-            t_col = lv_s / math.tan(init_rad) if math.tan(init_rad) != 0 else 0
+            lv_s = trial_context.get("lv_ratio_ms", self.LV_RATIO_MS) / 1000.0
+            t_col = self._collision_time_s(lv_s, self.init_deg)
 
             # 严格依据时间轴进行状态切片
             # 刺激结束后进入静默录制窗口（PostStimulus），确保数据采集完整
@@ -954,8 +965,7 @@ class ClassicLoomingParadigm(BaseParadigm):
         final_deg = trial_context["final_angle_deg"]
         side = trial_context["direction"]
 
-        init_rad = math.radians(init_deg / 2)
-        t_col = lv_s / math.tan(init_rad) if math.tan(init_rad) != 0 else 0
+        t_col = self._collision_time_s(lv_s, init_deg)
 
         is_done = False
         theta = init_deg
@@ -2070,6 +2080,8 @@ class GratingParadigm(BaseParadigm):
 class SingleLoomingParadigm(BaseParadigm):
     """Single screen centered looming disc stimulus paradigm."""
 
+    LV_RATIO_MS = 100
+
     EXPERIMENT_PATTERNS = {
         "Baseline Visual": {
             "type": "baseline_visual",
@@ -2236,19 +2248,17 @@ class SingleLoomingParadigm(BaseParadigm):
             wind_dir = trial_context.get("wind_dir", "none")
             if wind_dir == "none":
                 return ""
-            lv_s = trial_context.get("lv_ratio_ms", 100) / 1000.0
-            init_rad = math.radians(self.init_deg / 2)
-            t_col_s = lv_s / math.tan(init_rad) if math.tan(init_rad) != 0 else 0
+            lv_s = trial_context.get("lv_ratio_ms", self.LV_RATIO_MS) / 1000.0
+            t_col_s = self._collision_time_s(lv_s, self.init_deg)
             delay_ms = max(
                 0, int(round(t_col_s * 1000)) + trial_context["target_ttc_ms"]
             )
             dir_char = "R" if wind_dir == "right" else "L"
             return f"<{dir_char},{delay_ms}>"
         elif trial_context["type"] == "baseline_wind":
-            # 使用默认 looming 参数 (100ms, 2°) 计算等效静默期
-            lv_s = 100 / 1000.0
-            init_rad = math.radians(2.0 / 2)
-            t_col_s = lv_s / math.tan(init_rad) if math.tan(init_rad) != 0 else 0
+            # 使用 looming 同一 l/v 计算等效静默期
+            lv_s = self.LV_RATIO_MS / 1000.0
+            t_col_s = self._collision_time_s(lv_s, self.init_deg)
 
             # baseline_delay 严格对齐 looming 的前导时间 (约 5.72秒)
             self._baseline_delay = t_col_s
@@ -2309,9 +2319,8 @@ class SingleLoomingParadigm(BaseParadigm):
         wind_active = 0
 
         if t_type in ["looming_wind", "baseline_visual"]:
-            lv_s = trial_context.get("lv_ratio_ms", 100) / 1000.0
-            init_rad = math.radians(self.init_deg / 2)
-            t_col = lv_s / math.tan(init_rad) if math.tan(init_rad) != 0 else 0
+            lv_s = trial_context.get("lv_ratio_ms", self.LV_RATIO_MS) / 1000.0
+            t_col = self._collision_time_s(lv_s, self.init_deg)
 
             # 严格依据时间轴进行状态切片
             # 刺激结束后进入静默录制窗口（PostStimulus），确保数据采集完整

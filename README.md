@@ -46,7 +46,7 @@ The following paradigms are built-in and can be dynamically loaded via the dashb
 
 | Paradigm           | Description                                                                                                                                                                                            |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Looming**        | Multi-modal looming stimulus with visual + wind field. Includes pure visual and pure wind baselines, plus 7 calibrated visuo-tactile conditions with gradient wind triggers from TTC -373ms to +200ms. |
+| **Looming**        | Multi-modal looming stimulus with visual + wind field. Includes pure visual and pure wind baselines, plus 8 calibrated visuo-tactile conditions with gradient wind triggers from TTC -541ms to +200ms. |
 | **ClassicLooming** | Pure visual parameterized looming model. Supports dynamic configuration of l/v ratio, initial/final degrees, and left/right presentation logic.                                                        |
 | **OpticFlow**      | Vectorized dot-motion model. Configurable speed, density, coherence, and direction.                                                                                                                    |
 | **MovementTrace**  | Lissajous trajectory tracking. Configurable X/Y frequency, amplitude, and trail length.                                                                                                                |
