@@ -7,3 +7,8 @@ data
 .pio
 .claude
 calibration_cfg.json
+.agents
+.codex
+.orchestrator
+.scratch
+.coverage
