@@ -8,16 +8,20 @@
   It implements a non-blocking state machine that:
 
     1. Parses packet commands from the host:  <DIR,DELAY_MS>
-       e.g. <L,5729>  → arm valve 0, fire 5729 ms after T₀
-            <R,300>   → arm valve 1, fire 300 ms after T₀
+       e.g. <L,5729>  → arm L valve (index 4), fire 5729 ms after T₀
+            <R,300>   → arm R valve (index 6), fire 300 ms after T₀
             <3,1000>  → arm valve 3, fire 1000 ms after T₀
-            <L,0>     → arm valve 0, fire immediately on T₀
+            <0,0>     → arm valve 0, fire immediately on T₀
+       <X,0> (or <x,0>) disarms from any state: all valves + TTL LOW,
+       back to IDLE, stale T₀ cleared.
 
     2. Waits for a RISING-edge hardware interrupt on Pin 18 (photodiode).
        The ISR records T₀ = millis() and sets a flag.
 
     3. After T₀, counts down DELAY_MS using millis().  When elapsed,
        fires the target valve + TTL sync for pulseInterval ms, then resets to IDLE.
+       If no T₀ arrives within 15 s of arming, the arm is dropped and all
+       valves are forced LOW (stale-arm timeout).
 
     4. Streams 200 Hz motion data unconditionally:
          t_ard,dx,dy,dz,stim_state\n
@@ -32,13 +36,13 @@
   Hardware Pin Map
   ----------------
     Pin 13  = TTL Sync marker (output)
-    Pin 38  = Valve 0 (L / index 0)
-    Pin 40  = Valve 1 (R / index 1)
+    Pin 38  = Valve 0
+    Pin 40  = Valve 1
     Pin 42  = Valve 2
     Pin 44  = Valve 3
-    Pin 46  = Valve 4
+    Pin 46  = Valve 4 = L
     Pin 48  = Valve 5
-    Pin 50  = Valve 6
+    Pin 50  = Valve 6 = R
     Pin 52  = Valve 7
     Pin 18  = Photodiode interrupt input (RISING edge)
     Pin  2  = SCLK Sensor X
@@ -114,14 +118,33 @@ unsigned long locked_t0 = 0;     // latched copy of t0_millis, immune to ISR re-
 int targetValvePin = -1;         // pin number of the armed valve
 uint16_t targetDelay = 0;        // 0–10000 ms delay after T₀
 unsigned long valveOpenTime = 0; // millis() when valve was energised
+unsigned long armedAt = 0;        // millis() when <DIR,DELAY> armed the machine
 
 const unsigned long PULSE_INTERVAL_MS = 200; // Valve open pulse duration (ms)
+const unsigned long ARM_TIMEOUT_MS = 15000UL; // Drop a stale arm with no T₀
+
+// ==========================================================================
+// Disarm — force all valves + TTL LOW, return to IDLE
+// ==========================================================================
+void disarmAll()
+{
+    for (int i = 0; i < totalValves; i++)
+        digitalWrite(valvePins[i], LOW);
+    digitalWrite(PIN_TTL, LOW);
+    targetValvePin = -1;
+    targetDelay = 0;
+    valveState = STATE_IDLE;
+    noInterrupts();
+    t0_triggered = false;
+    interrupts();
+}
 
 // ==========================================================================
 // Non-blocking Serial Packet Parser
 // --------------------------------------------------------------------------
-// Format: <DIR,DELAY_MS>   e.g. <L,5729>, <R,0>, or <3,1000>
-// DIR can be 'L'/'R' (→ index 0/1) or a digit 0–7 (→ direct valve index).
+// Format: <DIR,DELAY_MS>   e.g. <L,5729>, <R,0>, <3,1000>, or <X,0>
+// DIR can be 'L'/'R' (→ index 4/6), a digit 0–7 (→ direct valve index),
+// or 'X'/'x' (→ disarm from any state).
 // Buffer hard-capped at 16 bytes.  Overflow or malformed → silent discard.
 // ==========================================================================
 const uint8_t CMD_BUF_SIZE = 16;
@@ -157,10 +180,17 @@ void parseSerialPackets()
             cmdBuf[cmdIdx] = '\0';
             cmdInside = false;
 
-            // Expected: "L,5729"  or  "R,0"  or  "3,1000"
+            // Expected: "L,5729"  or  "R,0"  or  "3,1000"  or  "X,0"
             if (cmdIdx < 3)
                 continue; // too short
             char dir = cmdBuf[0];
+
+            // --- Abort: <X,0> disarms from any state ---
+            if (dir == 'X' || dir == 'x')
+            {
+                disarmAll();
+                continue;
+            }
 
             // --- Parse direction → valve index ---
             // --- Set airflow direction (L/R) with direct valve index (0–7) ---
@@ -217,6 +247,7 @@ void parseSerialPackets()
             // ---- Valid command: arm the state machine ----
             targetValvePin = valvePins[valveIdx];
             targetDelay = (uint16_t)val;
+            armedAt = millis();
             valveState = STATE_ARMED;
 
             // Clear any stale T₀ flag so we only respond to the NEXT flash
@@ -267,7 +298,12 @@ void valveStateMachineTick(unsigned long now)
         interrupts();
 
         if (!fired)
+        {
+            // Stale-arm timeout (unsigned subtraction → millis rollover safe)
+            if (now - armedAt >= ARM_TIMEOUT_MS)
+                disarmAll();
             break; // Still waiting for flash
+        }
 
         // T₀ received — latch timestamp, clear flag
         noInterrupts();
