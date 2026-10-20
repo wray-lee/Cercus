@@ -218,3 +218,25 @@ def test_advance_trial_and_cache_preservation() -> None:
         logger2 = GroundTruthLogger(tmpdir)
         assert logger2.global_trial_id == 2
         logger2.shutdown()
+
+
+def test_events_reach_disk_without_close() -> None:
+    """Sparse events must not sit in the file buffer until shutdown — an
+    abnormal exit (window closed, crash) would otherwise lose them all."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        logger = GroundTruthLogger(tmpdir)
+        logger.open_session("subject_crash", 1, ["sys_time", "g_id"])
+        logger.log_event("trial_start", 1.0, trial_type="looming")
+
+        event_file = os.path.join(tmpdir, "subject_crash_session_1_events.csv")
+        deadline = time.time() + 2.0
+        content = ""
+        while time.time() < deadline and "trial_start" not in content:
+            time.sleep(0.02)
+            if os.path.exists(event_file):
+                with open(event_file, "r", encoding="utf-8-sig") as f:
+                    content = f.read()
+        try:
+            assert "trial_start" in content
+        finally:
+            logger.shutdown()

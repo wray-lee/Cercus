@@ -317,6 +317,24 @@ def test_serial_daemon_thread_cleanup_and_data_flow() -> None:
     assert sd.tx_queue.empty()
 
 
+def test_serial_daemon_stop_writes_disarm() -> None:
+    """Verify SerialDaemon.stop writes the <X,0> disarm frame before closing the port."""
+    fake_port = FakeSerialPort()
+    sd = SerialDaemon("COM99", timeout=0.01)
+
+    mock_serial_mod = MagicMock()
+    mock_serial_mod.Serial.return_value = fake_port
+
+    with patch.object(hw_mod, "HAS_SERIAL", True):
+        with patch.object(hw_mod, "serial", mock_serial_mod):
+            sd.start(time_func=time.perf_counter)
+
+    sd.stop()
+
+    assert b"<X,0>" in fake_port.written_bytes
+    assert fake_port.is_open is False
+
+
 def test_serial_daemon_reader_queue_full_and_error_recovery() -> None:
     """Verify reader loop handles full queue and recovers from serial exceptions."""
     fake_port = FakeSerialPort()
