@@ -388,13 +388,16 @@ void setup()
 // ==========================================================================
 void loop()
 {
-    unsigned long millisNow = millis(); // for valve state machine (ms-resolution timers)
-
     // ==================================================================
     // 1. Non-blocking serial packet parser  (<DIR,DELAY_MS>)
     //    Polled at peak MCU clock — unconstrained by epoch boundary.
     // ==================================================================
     parseSerialPackets();
+
+    // Sample AFTER parsing: arming stamps armedAt = millis(), so a timestamp
+    // taken before the parse can be older and `now - armedAt` would wrap to
+    // ~4.29e9, tripping the stale-arm timeout on the very arm it timed.
+    unsigned long millisNow = millis(); // for valve state machine (ms-resolution timers)
 
     // ==================================================================
     // 2. Valve state machine tick (IDLE / ARMED / COUNTDOWN / FIRING)
