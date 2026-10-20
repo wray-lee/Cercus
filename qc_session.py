@@ -158,7 +158,15 @@ def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], di
     ds = np.diff(sys_t)
     if not bool((ds >= 0).all()):
         fails.append("sys_time not monotonic")
+    info["host_read_stalls"] = 0
     for i in np.flatnonzero(ds > 0.1):
+        # sys_time is stamped per serial read, so a host-side read stall shows
+        # as a sys gap while ard_time stays continuous (backlog stamped at
+        # once).  Only a matching ard_time gap means samples were lost.
+        d_ard = ard[i + 1] - ard[i]
+        if ard[i] > 0 and 0 <= d_ard <= 20:
+            info["host_read_stalls"] += 1
+            continue
         t0 = float(sys_t[i])
         msg = f"telemetry gap {ds[i]:.1f} s at {t0:.1f} s"
         warns.append(msg + (" (inside trial)" if any(a <= t0 <= b for a, b in windows) else " (ITI)"))
