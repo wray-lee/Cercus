@@ -17,6 +17,8 @@ import sys
 import numpy as np
 import pandas as pd
 
+from src.models.paradigm import LoomingParadigm
+
 EXPECTED_TRIALS = 18
 ONSET_TOL_MS = 60.0
 PULSE_MIN_MS, PULSE_MAX_MS = 100.0, 400.0
@@ -38,6 +40,17 @@ def _details(s: pd.Series) -> pd.Series:
     return s.fillna("{}")
 
 
+def _mixed_pattern(conds: set) -> tuple[str, int] | None:
+    """Smallest lv_mixed pattern covering the logged conditions → (name, trials)."""
+    # ponytail: a session truncated before any condition unique to the larger
+    # pattern appears is matched to the smaller one; the trial count still fails.
+    hits = sorted(
+        (len(p["conditions"]), k, len(p["conditions"]) * (2 if p["sessions"] == 1 else 1))
+        for k, p in LoomingParadigm.EXPERIMENT_PATTERNS.items()
+        if p["type"] == "lv_mixed" and conds <= set(p["conditions"]))
+    return (hits[0][1], hits[0][2]) if hits else None
+
+
 def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], dict]:
     fails: list[str] = []
     warns: list[str] = []
@@ -53,8 +66,17 @@ def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], di
     verdicts = ev[ev.event_name == "trial_verdict"]
     n = len(starts)
     info["trials"] = n
-    if n != EXPECTED_TRIALS:
-        fails.append(f"trial_start={n} (expected {EXPECTED_TRIALS})")
+    conds = starts.details.fillna("").str.extract(r'"condition": "([A-Z0-9]+)"')[0]
+    expected_n = EXPECTED_TRIALS
+    if conds.notna().any():
+        mixed = _mixed_pattern(set(conds.dropna()))
+        if mixed is None:
+            fails.append(f"unknown condition set {sorted(set(conds.dropna()))}")
+        else:
+            info["pattern"], expected_n = mixed
+    info["expected_trials"] = expected_n
+    if n != expected_n:
+        fails.append(f"trial_start={n} (expected {expected_n})")
     if len(stops) != n:
         fails.append(f"trial_stop={len(stops)} vs {n} trials")
     if len(verdicts) == 0:
@@ -65,7 +87,7 @@ def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], di
     ttc = starts.details.fillna("").str.extract(r'"target_ttc_ms": ([-0-9]+)')[0]
     info["types"] = types.value_counts().to_dict()
     info["ttc"] = ttc.value_counts().to_dict()
-    if types.nunique() != 1:
+    if types.nunique() != 1 and "pattern" not in info:
         warns.append(f"mixed trial types: {info['types']}")
 
     # phase completeness per trial
@@ -98,7 +120,7 @@ def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], di
         warns.append(f"stim_state glitch values {vals} (expected [0, 1])")
     if not wind_session and vals != [0]:
         warns.append(f"visual-only session has stim_state values {vals}")
-    onsets, durs, durs_detail, missing = [], [], [], 0
+    onsets, errs, durs, durs_detail, missing = [], [], [], [], 0
     gid = kin.global_trial_id.to_numpy()
     sys_t = kin.sys_time.to_numpy(float)
     for _, r in starts.iterrows():
@@ -114,6 +136,8 @@ def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], di
             continue
         idx = np.flatnonzero(mask)
         onsets.append((sys_t[idx[0]] - coll[tid]) * 1000.0)
+        # 每个试次对自己的 SOA；混合 session 里 SOA 各不相同
+        errs.append(onsets[-1] - float(ttc[starts.global_trial_id == tid].iloc[0]))
         d = (sys_t[idx[-1]] - sys_t[idx[0]]) * 1000.0
         durs.append(d)
         durs_detail.append((tid, d))
@@ -121,12 +145,15 @@ def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], di
     if missing:
         fails.append(f"{missing} looming trials without a wind pulse")
     if onsets:
-        nominal = float(ttc.dropna().iloc[0]) if ttc.notna().any() else None
+        nominal = float(ttc.dropna().iloc[0]) if ttc.nunique() == 1 else None
         med = float(np.median(onsets))
+        med_err = float(np.median(errs))
         info["onset_med_ms"] = med
         info["nominal_ms"] = nominal
-        if nominal is not None and abs(med - nominal) > ONSET_TOL_MS:
-            fails.append(f"wind onset median {med:.0f} ms vs nominal {nominal:.0f}")
+        if abs(med_err) > ONSET_TOL_MS:
+            fails.append(f"wind onset median {med:.0f} ms vs nominal {nominal:.0f}"
+                         if nominal is not None else
+                         f"wind onset median error {med_err:+.0f} ms vs per-trial SOA")
         odd = [(t, d) for t, d in durs_detail
                if d < PULSE_MIN_MS or d > PULSE_MAX_MS]
         if odd:
@@ -227,6 +254,8 @@ def _parse_name(name: str) -> tuple[str, str, str, str]:
 
 
 def _paradigm(info: dict) -> str:
+    if info.get("pattern"):
+        return info["pattern"]
     types = info.get("types") or {}
     if "baseline_visual" in types:
         return "visual only (bv)"
@@ -257,11 +286,12 @@ def _session_line(sess: str, fails: list[str], info: dict) -> str:
     else:
         onset_s = "onset n/a"
     n = int(info.get("trials", 0))
+    n_exp = int(info.get("expected_trials", EXPECTED_TRIALS))
     wind = int(info.get("wind_pulses", 0))
     dur = float(info.get("duration_min", 0.0))
     status = "✅" if ok else "❌"
     dx = "dx DEAD" if dead else "dx OK"
-    line = (f"  {status}  session {sess}   {n:2d}/18 trials   "
+    line = (f"  {status}  session {sess}   {n:2d}/{n_exp} trials   "
             f"{wind:2d}/{n} wind   {onset_s:24s} {dur:5.1f} min   "
             f"{dx:8s} {_responses(info)}")
     line = line.replace(status, paint(status, GREEN if ok else RED), 1)

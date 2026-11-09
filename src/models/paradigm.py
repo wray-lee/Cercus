@@ -289,6 +289,29 @@ class BaseParadigm(ABC):
 # Looming Paradigm (Multi-modal: Visual + Wind)
 # ---------------------------------------------------------------------------
 
+# 补充实验条件表（变 l/v + 冻结 loom + 异侧风），所有条件在同一 session 内交错。
+# freeze_ttc_ms: 盘扩到该名义碰撞前时刻后停住（-308 ms @ l/v 120 = 42.6°）；
+# contra: 风从屏幕对侧来。
+_LV_SOAS_MS = (-600, -450, -373, -300, -225, -119)
+LV_SUPPLEMENT_CONDITIONS = {
+    **{f"A{i}": {"type": "looming_wind", "lv_ratio_ms": 120, "target_ttc_ms": s}
+       for i, s in enumerate(_LV_SOAS_MS, 1)},
+    **{f"B{i}": {"type": "looming_wind", "lv_ratio_ms": 240, "target_ttc_ms": s}
+       for i, s in enumerate(_LV_SOAS_MS, 1)},
+    "W120": {"type": "baseline_wind", "lv_ratio_ms": 120, "target_ttc_ms": None},
+    "W240": {"type": "baseline_wind", "lv_ratio_ms": 240, "target_ttc_ms": None},
+    "V120": {"type": "baseline_visual", "lv_ratio_ms": 120, "target_ttc_ms": None},
+    "V240": {"type": "baseline_visual", "lv_ratio_ms": 240, "target_ttc_ms": None},
+    "F1": {"type": "looming_wind", "lv_ratio_ms": 120, "target_ttc_ms": -228, "freeze_ttc_ms": -308},
+    "F2": {"type": "looming_wind", "lv_ratio_ms": 120, "target_ttc_ms": -118, "freeze_ttc_ms": -308},
+    "FV": {"type": "baseline_visual", "lv_ratio_ms": 120, "target_ttc_ms": None, "freeze_ttc_ms": -308},
+    "C1": {"type": "looming_wind", "lv_ratio_ms": 120, "target_ttc_ms": -308, "contra": True},
+    "C2": {"type": "looming_wind", "lv_ratio_ms": 120, "target_ttc_ms": -261, "contra": True},
+}
+_LV_CORE = (*(f"A{i}" for i in range(1, 7)), *(f"B{i}" for i in range(1, 7)),
+            "W120", "W240", "V120", "V240")
+_LV_EXTRA = ("F1", "F2", "FV", "C1", "C2")
+
 
 class LoomingParadigm(BaseParadigm):
     """Multi-looming stimulus paradigm with expanding visual discs and wind triggers."""
@@ -347,10 +370,22 @@ class LoomingParadigm(BaseParadigm):
             "target_ttc_ms": 200,
             "lv_ratio_ms": LV_RATIO_MS,
         },
+        # 混合范式：sessions = 一个 block 拆成几个 session。2 = 每个条件每个 session
+        # 出现一次、左右各在一个 session；1 = 同一 session 内左右各一次。
+        "LV Supplement: Core (16 cond x L/R, 2 sessions)": {
+            "type": "lv_mixed", "conditions": _LV_CORE, "sessions": 2,
+        },
+        "LV Supplement: Full (21 cond x L/R, 2 sessions)": {
+            "type": "lv_mixed", "conditions": _LV_CORE + _LV_EXTRA, "sessions": 2,
+        },
+        "LV Supplement: Freeze + Contra Cohort (12 trials)": {
+            "type": "lv_mixed", "conditions": _LV_EXTRA + ("W120",), "sessions": 1,
+        },
     }
 
     def __init__(self, debug_mode: bool = False, config: Optional[dict] = None) -> None:
         self.config = config or {}
+        self._mixed_calls = 0
         self.viewing_distance_cm = float(self.config.get("Viewing Distance (cm)", 30.0))
         self.screen_width_cm = float(self.config.get("Screen Width (cm)", 53.0))
 
@@ -503,6 +538,9 @@ class LoomingParadigm(BaseParadigm):
         if "Random Seed" in self.config:
             self._apply_random_seed(self.config)
 
+        if p["type"] == "lv_mixed":
+            return self._generate_mixed_trials(p)
+
         reps = max(1, int(self.config.get("Number of Repetitions", 9)))
         directions = ["left"] * reps + ["right"] * reps
 
@@ -527,6 +565,76 @@ class LoomingParadigm(BaseParadigm):
                 d["wind_dir"], d["screen_side"] = direction, direction
             trials.append(d)
         return trials
+
+    def _generate_mixed_trials(self, p: dict) -> List[Dict[str, Any]]:
+        """One session of an interleaved block (Number of Repetitions is ignored).
+
+        The block plan is a pure function of (Subject ID, block index), not the
+        seed: the worker re-rolls "Auto" seeds every launch, and session k of a
+        block may be run in a later launch with Session Number = k and must
+        still get the complementary sides.
+        """
+        n = p["sessions"]
+        s = int(self.config.get("Session Number", 1)) - 1 + self._mixed_calls
+        self._mixed_calls += 1
+        rng = random.Random(f"{self.config.get('Subject ID', '')}/{p['conditions']}/{s // n}")
+
+        conds = p["conditions"]
+        if n == 1:
+            items = [(c, side) for c in conds for side in ("left", "right")]
+        else:
+            # 第一个 session 左右各半（奇数个条件时差 1），第二个 session 取反
+            first = (["left", "right"] * len(conds))[:len(conds)]
+            rng.shuffle(first)
+            flip = {"left": "right", "right": "left"}
+            items = [(c, side if s % n == 0 else flip[side]) for c, side in zip(conds, first)]
+        keys = [lambda x: x[1]]
+        if len({LV_SUPPLEMENT_CONDITIONS[c]["lv_ratio_ms"] for c, _ in items}) > 1:
+            keys.append(lambda x: LV_SUPPLEMENT_CONDITIONS[x[0]]["lv_ratio_ms"])
+        order = self._constrained_order(items, keys, rng)
+
+        trials = []
+        for cond, side in order:
+            c = LV_SUPPLEMENT_CONDITIONS[cond]
+            d = {
+                "type": c["type"],
+                "target_ttc_ms": c["target_ttc_ms"],
+                "lv_ratio_ms": c["lv_ratio_ms"],
+                "condition": cond,
+                "screen_side": side,
+            }
+            if c["type"] == "baseline_visual":
+                d["wind_dir"] = "none"
+            elif c.get("contra"):
+                d["wind_dir"] = "right" if side == "left" else "left"
+            else:
+                d["wind_dir"] = side
+            if "freeze_ttc_ms" in c:
+                d["freeze_ttc_ms"] = c["freeze_ttc_ms"]
+            trials.append(d)
+        return trials
+
+    @staticmethod
+    def _constrained_order(items: list, keys: list, rng: random.Random, max_run: int = 2) -> list:
+        """Random order where no key repeats more than max_run times in a row.
+
+        Greedy random build with restart; rejection-shuffling is ~1e-4 accept
+        for the 21-condition block.
+        """
+        for _ in range(1000):
+            pool, seq = list(items), []
+            while pool:
+                ok = [x for x in pool if not any(
+                    len(seq) >= max_run and all(k(y) == k(x) for y in seq[-max_run:])
+                    for k in keys)]
+                if not ok:
+                    break
+                x = rng.choice(ok)
+                pool.remove(x)
+                seq.append(x)
+            else:
+                return seq
+        raise RuntimeError("No trial order satisfies the run-length constraints")
 
     @staticmethod
     def _max_consecutive(directions: List[str]) -> int:
@@ -555,8 +663,8 @@ class LoomingParadigm(BaseParadigm):
             dir_char = "R" if wind_dir == "right" else "L"
             return f"<{dir_char},{delay_ms}>"
         elif trial_context["type"] == "baseline_wind":
-            # 使用 looming 同一 l/v 计算等效静默期
-            lv_s = self.LV_RATIO_MS / 1000.0
+            # 使用 looming 同一 l/v 计算等效静默期（试次带 l/v 时按试次）
+            lv_s = (trial_context.get("lv_ratio_ms") or self.LV_RATIO_MS) / 1000.0
             t_col_s = self._collision_time_s(lv_s, self.init_deg)
 
             # baseline_delay 严格对齐 looming 的前导时间 (约 6.88秒)
@@ -633,6 +741,7 @@ class LoomingParadigm(BaseParadigm):
         if t_type in ["looming_wind", "baseline_visual"]:
             lv_s = trial_context.get("lv_ratio_ms", self.LV_RATIO_MS) / 1000.0
             t_col = self._collision_time_s(lv_s, self.init_deg)
+            freeze_ms = trial_context.get("freeze_ttc_ms")
 
             # 严格依据时间轴进行状态切片
             # 刺激结束后进入静默录制窗口（PostStimulus），确保数据采集完整
@@ -643,6 +752,12 @@ class LoomingParadigm(BaseParadigm):
                 theta = self.init_deg
                 phase = "PostStimulus"
                 stim_active = 0
+            elif freeze_ms is not None and elapsed_time >= t_col + freeze_ms / 1000.0:
+                # 冻结 loom：停在名义 freeze_ttc_ms 时刻的视角，保持到名义碰撞后 1 s；
+                # 名义碰撞时刻仍切到 Collision_TTC0，下游 QC/分析的锚点不变
+                theta = math.degrees(2 * math.atan(lv_s / (-freeze_ms / 1000.0)))
+                phase = "Frozen" if elapsed_time < t_col else "Collision_TTC0"
+                stim_active = 1
             elif elapsed_time >= t_col:
                 theta = self.max_deg
                 # 越过 TTC=0 瞬间，发射特征 Phase 触发 Worker 记录
@@ -671,7 +786,7 @@ class LoomingParadigm(BaseParadigm):
 
         ui_color = (
             "lime"
-            if phase == "Looming"
+            if phase in ("Looming", "Frozen")
             else ("yellow" if phase == "Collision_TTC0"
             else ("gray" if phase in ("PostStimulus", "PostStimulus_End")
             else ("orange" if phase == "Baseline" else "cyan")))
