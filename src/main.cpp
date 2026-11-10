@@ -116,11 +116,12 @@ enum ValveState : uint8_t
 ValveState valveState = STATE_IDLE;
 unsigned long locked_t0 = 0;     // latched copy of t0_millis, immune to ISR re-entry
 int targetValvePin = -1;         // pin number of the armed valve
-uint16_t targetDelay = 0;        // 0–10000 ms delay after T₀
+uint16_t targetDelay = 0;        // 0–MAX_DELAY_MS ms delay after T₀
 unsigned long valveOpenTime = 0; // millis() when valve was energised
 unsigned long armedAt = 0;        // millis() when <DIR,DELAY> armed the machine
 
 const unsigned long PULSE_INTERVAL_MS = 200; // Valve open pulse duration (ms)
+const unsigned long MAX_DELAY_MS = 60000UL;  // Largest accepted DELAY_MS; must stay <= 65535 because targetDelay is uint16_t
 const unsigned long ARM_TIMEOUT_MS = 15000UL; // Drop a stale arm with no T₀
 
 // ==========================================================================
@@ -215,7 +216,7 @@ void parseSerialPackets()
             if (cmdBuf[1] != ',')
                 continue; // missing comma
 
-            // --- Parse delay (digits only, 0–10000) ---
+            // --- Parse delay (digits only, 0–MAX_DELAY_MS) ---
             unsigned long val = 0;
             bool validNum = true;
             for (uint8_t i = 2; i < cmdIdx; i++)
@@ -226,7 +227,7 @@ void parseSerialPackets()
                     break;
                 }
                 val = val * 10 + (cmdBuf[i] - '0');
-                if (val > 10000)
+                if (val > MAX_DELAY_MS)
                 {
                     validNum = false;
                     break;
