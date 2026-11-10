@@ -24,6 +24,9 @@ ABORT_KEY = "0"
 # silently drops a `<DIR,DELAY_MS>` whose DELAY_MS exceeds it: the valve never
 # fires and nothing is reported back, so the session is refused up front instead.
 FIRMWARE_MAX_DELAY_MS: int = 60000
+# Firmware build the valve timing was verified against (hardware repo commit);
+# recorded in every session_config event. Update together with a re-flash.
+FIRMWARE_VERSION: str = "hardware@3920573"
 _WIND_CMD = re.compile(r"<([A-Za-z]+),(\d+)>")
 
 _shutdown_event = threading.Event()
@@ -299,6 +302,14 @@ class GenericWorker:
                 f"{' ...' if len(over) > 3 else ''}. Session not started."
             )
 
+    def _log_session_config(self, logger: GroundTruthLogger, clock: Any) -> None:
+        logger.log_event(
+            "session_config", clock.getTime(),
+            seed=self.config.get("Random Seed"),
+            firmware=FIRMWARE_VERSION,
+            **self.paradigm.session_metadata(),
+        )
+
     @staticmethod
     def _send_wind_cmd(hw_daemon: Any, logger: GroundTruthLogger, clock: Any, cmd: str) -> None:
         """Queue `<DIR,DELAY_MS>` for the serial daemon and log it, for per-trial audit.
@@ -394,10 +405,7 @@ class GenericWorker:
                 first_session_num,
                 self.parser.get_headers(),
             )
-            logger.log_event(
-                "session_config", clock.getTime(),
-                seed=self.config.get("Random Seed"),
-            )
+            self._log_session_config(logger, clock)
             # Pre-prepare first trial so SPACE triggers zero-delay rendering
             first_init_cmd = ""
             if trials:
@@ -464,6 +472,7 @@ class GenericWorker:
                         current_session,
                         self.parser.get_headers(),
                     )
+                    self._log_session_config(logger, clock)
                 else:
                     current_session = first_session_num
 

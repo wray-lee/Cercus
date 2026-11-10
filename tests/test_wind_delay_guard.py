@@ -20,10 +20,11 @@ FULL = "LV Supplement: Full (21 cond x L/R, 2 sessions)"
 WIND = "Looming + Wind (TTC -373ms / 35.7°)"
 
 
-def _run(pattern: str, limit: int = FIRMWARE_MAX_DELAY_MS) -> tuple:
+def _run(pattern: str, limit: int = FIRMWARE_MAX_DELAY_MS, **cfg_overrides: Any) -> tuple:
     """Run a full mock session; return (mock_logger, telemetry actions/errors)."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        cfg = _make_config(tmpdir, **{"Execution Mode": "Auto", "Experiment Pattern": pattern})
+        cfg = _make_config(tmpdir, **{"Execution Mode": "Auto", "Experiment Pattern": pattern,
+                                       **cfg_overrides})
         cmd_q, tel_q = mp.Queue(), mp.Queue()
         worker = GenericWorker(cfg, cmd_q, tel_q)
         psy = MagicMock()

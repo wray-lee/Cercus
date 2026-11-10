@@ -13,11 +13,17 @@ import glob
 import os
 import re
 import sys
+from collections import Counter
 
 import numpy as np
 import pandas as pd
 
-from src.models.paradigm import LoomingParadigm
+from src.models.paradigm import (
+    LV_GRID_CONDITIONS,
+    LV_GRID_PATTERN,
+    LV_GRID_SESSION_SIZES,
+    LoomingParadigm,
+)
 
 EXPECTED_TRIALS = 18
 ONSET_TOL_MS = 60.0
@@ -66,9 +72,29 @@ def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], di
     verdicts = ev[ev.event_name == "trial_verdict"]
     n = len(starts)
     info["trials"] = n
-    conds = starts.details.fillna("").str.extract(r'"condition": "([A-Z0-9]+)"')[0]
+    conds = starts.details.fillna("").str.extract(r'"condition": "([A-Za-z0-9_]+)"')[0]
     expected_n = EXPECTED_TRIALS
-    if conds.notna().any():
+    if conds.notna().any() and set(conds.dropna()) <= set(LV_GRID_CONDITIONS):
+        # 42-trial l/v grid: the session's size depends on its number (18/12/12)
+        info["pattern"] = LV_GRID_PATTERN
+        sess_no = int(starts.session_num.iloc[0]) if "session_num" in starts else 0
+        info["session_no"] = sess_no
+        sides = starts.details.fillna("").str.extract(r'"screen_side": "(left|right)"')[0]
+        info["cells"] = sorted(zip(conds, sides))
+        if 1 <= sess_no <= len(LV_GRID_SESSION_SIZES):
+            expected_n = LV_GRID_SESSION_SIZES[sess_no - 1]
+            kinds = Counter(LV_GRID_CONDITIONS[c]["type"] for c in conds)
+            want = ({"baseline_wind": 6, "looming_wind": 12} if sess_no == 1
+                    else {"baseline_visual": 2, "looming_wind": 10})
+            if n == expected_n and kinds != want:
+                fails.append(f"grid session {sess_no} composition {dict(kinds)} (expected {want})")
+            dup = sorted(c for c, k in Counter(conds).items() if k > 1)
+            if dup:
+                fails.append(f"grid conditions repeated within session {sess_no}: {dup}")
+        else:
+            fails.append(f"grid session number {sess_no} not in 1-{len(LV_GRID_SESSION_SIZES)}")
+            expected_n = n
+    elif conds.notna().any():
         mixed = _mixed_pattern(set(conds.dropna()))
         if mixed is None:
             fails.append(f"unknown condition set {sorted(set(conds.dropna()))}")
@@ -229,7 +255,8 @@ def check_session(ev_path: str, kin_path: str) -> tuple[list[str], list[str], di
     # duration
     span = float(ev[ev.event_name == "trial_stop"].timestamp.max() - ev.timestamp.min())
     info["duration_min"] = span / 60.0
-    if span / 60.0 < 15.0:
+    min_min = 15.0 * min(1.0, expected_n / EXPECTED_TRIALS)  # shorter sessions are shorter
+    if span / 60.0 < min_min:
         fails.append(f"session duration {span/60:.1f} min (too short, aborted?)")
     elif span / 60.0 > 45.0:
         warns.append(f"long session {span/60:.1f} min (pause?)")
@@ -247,7 +274,8 @@ TTC_LABEL = {
 def _parse_name(name: str) -> tuple[str, str, str, str]:
     m = re.match(r"(.*?)cricket(?:_001)?_(\d{8})_(\d{6})_session_(\d)", name)
     if not m:
-        return "?", "?", "?", "?"
+        g = re.match(r"(.+?)_session_(\d+)_events", name)  # stable Subject ID, e.g. cricket_007
+        return (g[1], "-", "-", g[2]) if g else ("?", "?", "?", "?")
     d = m.group(2)
     return (m.group(1) or "?", f"{d[:4]}-{d[4:6]}-{d[6:]}",
             m.group(3), m.group(4))
@@ -300,6 +328,27 @@ def _session_line(sess: str, fails: list[str], info: dict) -> str:
     return line
 
 
+def _check_grid_animal(infos: list[dict]) -> bool:
+    """Animal-level checks of the 42-trial grid; prints problems, returns True on FAIL."""
+    problems = []
+    got = sorted(i.get("session_no", 0) for i in infos)
+    want = list(range(1, len(LV_GRID_SESSION_SIZES) + 1))
+    if got != want:
+        problems.append(f"grid sessions found {got}, an animal needs {want}")
+    elif sum(i["trials"] for i in infos) == sum(LV_GRID_SESSION_SIZES):
+        cells = Counter(c for i in infos for c in i["cells"] if c[0].startswith("L"))
+        v120 = Counter(c for i in infos for c in i["cells"] if c[0] == "V120")
+        expect = {(c, side): 1 for c, v in LV_GRID_CONDITIONS.items()
+                  if v["type"] == "looming_wind" for side in ("left", "right")}
+        if cells != expect:
+            problems.append("grid looming cells are not each once per side across the 3 sessions")
+        if v120 != {("V120", "left"): 1, ("V120", "right"): 1}:
+            problems.append("V120 is not once per side across the 3 sessions")
+    for msg in problems:
+        print("      " + paint(f"❌   {msg}", RED))
+    return bool(problems)
+
+
 def main(folder: str) -> int:
     evs = sorted(glob.glob(os.path.join(folder, "*_events.csv")))
     if not evs:
@@ -329,7 +378,10 @@ def main(folder: str) -> int:
         print(paint(f"🦗  {animal}   ·   {paradigm}   ·   {date}", BOLD))
         print(paint(SEP, DIM))
         animal_fail = False
-        if len(results) != 2:
+        grid = [r[3] for r in results if r[3].get("pattern") == LV_GRID_PATTERN]
+        if grid:
+            animal_fail = _check_grid_animal(grid)
+        elif len(results) != 2:
             print("      " + paint(
                 f"⚠️   {len(results)} session(s) found (an animal needs 2)",
                 YELLOW))

@@ -1,5 +1,7 @@
+import hashlib
 import math
 import random
+import re
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -39,6 +41,10 @@ class BaseParadigm(ABC):
         """Looming lead time from init_deg to collision: t = l/v · cot(θ0/2)."""
         t = math.tan(math.radians(init_deg / 2))
         return lv_s / t if t != 0 else 0.0
+
+    def session_metadata(self) -> Dict[str, Any]:
+        """Extra fields for the ``session_config`` event, valid after ``generate_trials``."""
+        return {}
 
     @classmethod
     def _schema_default(cls, key: str) -> Any:
@@ -313,6 +319,25 @@ _LV_CORE = (*(f"A{i}" for i in range(1, 7)), *(f"B{i}" for i in range(1, 7)),
 _LV_EXTRA = ("F1", "F2", "FV", "C1", "C2")
 
 
+# 42 试次 l/v 网格（每只动物 3 个 session，18/12/12）：
+# 16 格联合 looming_wind × 左右各 1 + 纯风每臂左右各 1 + 纯视觉（120 臂 2 次，60/180 臂各 1 次）。
+LV_GRID_PATTERN = "LV Grid 42 (3 sessions, per animal)"
+LV_GRID_SOAS_MS = {
+    60: (-308, -261, -225, -180, -144, -119),
+    120: (-373, -308, -261, -225, -119),
+    180: (-600, -520, -480, -430, -287),
+}
+LV_GRID_SESSION_SIZES = (18, 12, 12)
+LV_GRID_CONDITIONS = {
+    **{f"L{lv}_{-soa}": {"type": "looming_wind", "lv_ratio_ms": lv, "target_ttc_ms": soa}
+       for lv, soas in LV_GRID_SOAS_MS.items() for soa in soas},
+    **{f"W{lv}": {"type": "baseline_wind", "lv_ratio_ms": lv, "target_ttc_ms": None}
+       for lv in LV_GRID_SOAS_MS},
+    **{f"V{lv}": {"type": "baseline_visual", "lv_ratio_ms": lv, "target_ttc_ms": None}
+       for lv in LV_GRID_SOAS_MS},
+}
+
+
 class LoomingParadigm(BaseParadigm):
     """Multi-looming stimulus paradigm with expanding visual discs and wind triggers."""
 
@@ -381,11 +406,14 @@ class LoomingParadigm(BaseParadigm):
         "LV Supplement: Freeze + Contra Cohort (12 trials)": {
             "type": "lv_mixed", "conditions": _LV_EXTRA + ("W120",), "sessions": 1,
         },
+        LV_GRID_PATTERN: {"type": "lv_grid", "sessions": len(LV_GRID_SESSION_SIZES)},
     }
 
     def __init__(self, debug_mode: bool = False, config: Optional[dict] = None) -> None:
         self.config = config or {}
         self._mixed_calls = 0
+        self._grid_plans: Dict[str, tuple] = {}
+        self._session_meta: Dict[str, Any] = {}
         self.viewing_distance_cm = float(self.config.get("Viewing Distance (cm)", 30.0))
         self.screen_width_cm = float(self.config.get("Screen Width (cm)", 53.0))
 
@@ -540,6 +568,8 @@ class LoomingParadigm(BaseParadigm):
 
         if p["type"] == "lv_mixed":
             return self._generate_mixed_trials(p)
+        if p["type"] == "lv_grid":
+            return self._generate_grid_trials(p)
 
         reps = max(1, int(self.config.get("Number of Repetitions", 9)))
         directions = ["left"] * reps + ["right"] * reps
@@ -614,6 +644,107 @@ class LoomingParadigm(BaseParadigm):
             trials.append(d)
         return trials
 
+    def session_metadata(self) -> Dict[str, Any]:
+        return dict(self._session_meta)
+
+    def _generate_grid_trials(self, p: dict) -> List[Dict[str, Any]]:
+        """One session of the 42-trial l/v grid; the plan is fixed per animal.
+
+        The 3-session plan is a pure function of Subject ID (see ``_lv_grid_plan``),
+        so a later launch with Session Number = k returns the same session k.
+        """
+        n = p["sessions"]
+        start = int(self.config.get("Session Number", 1)) - 1
+        total = self.config.get("Total Sessions")
+        if total is not None and (int(total) == -1 or start + int(total) > n):
+            raise ValueError(
+                f"{LV_GRID_PATTERN} has {n} sessions: Session Number={start + 1} with "
+                f"Total Sessions={total} would run outside sessions 1-{n} "
+                "(Manual mode, Total Sessions=-1, is not supported)")
+        s = start + self._mixed_calls
+        self._mixed_calls += 1
+        if not 0 <= s < n:
+            raise ValueError(f"{LV_GRID_PATTERN} has no session {s + 1} (valid: 1-{n})")
+
+        subject = str(self.config.get("Subject ID", ""))
+        if subject not in self._grid_plans:
+            self._grid_plans[subject] = self._lv_grid_plan(subject)
+        plan_seed, animal_idx, sessions = self._grid_plans[subject]
+        self._session_meta = {"pattern": LV_GRID_PATTERN, "plan_seed": plan_seed,
+                              "animal_index": animal_idx, "grid_session": s + 1}
+
+        trials = []
+        for cond, side in sessions[s]:
+            c = LV_GRID_CONDITIONS[cond]
+            trials.append({
+                "type": c["type"],
+                "target_ttc_ms": c["target_ttc_ms"],
+                "lv_ratio_ms": c["lv_ratio_ms"],
+                "condition": cond,
+                "screen_side": side,
+                "wind_dir": "none" if c["type"] == "baseline_visual" else side,
+            })
+        return trials
+
+    @classmethod
+    def _lv_grid_plan(cls, subject_id: str) -> tuple:
+        """(plan_seed, animal_index, [session items]) for one animal.
+
+        Constraints, all enforced or the plan raises (never silently truncated):
+        session sizes 18/12/12; the two trials of a looming cell (and of V120)
+        sit in different sessions, one per side; S1 = 6 pure-wind + 12 looming,
+        S2/S3 = 10 looming + 2 visual; no side or l/v arm more than twice in a
+        row; every session exactly side-balanced. V60 and V180 sit on opposite
+        sides, and V60's side alternates with the animal number (trailing 1-4
+        digits of Subject ID), so any 2 consecutive animals are balanced.
+        """
+        m = re.search(r"(?<!\d)(\d{1,4})$", subject_id)
+        if not m:
+            raise ValueError(
+                f"{LV_GRID_PATTERN} needs a stable Subject ID ending in the animal number "
+                f"of 1-4 digits (e.g. cricket_007) and the same ID for all 3 sessions; "
+                f"got {subject_id!r} (timestamp IDs from the New button do not qualify)")
+        idx = int(m.group(1))
+        plan_seed = int(hashlib.sha256(f"lv-grid-42/{subject_id}".encode()).hexdigest()[:8], 16)
+        rng = random.Random(plan_seed)
+        flip = {"left": "right", "right": "left"}
+        v60 = "left" if idx % 2 == 0 else "right"
+        v180 = flip[v60]
+        looming = [c for c, v in LV_GRID_CONDITIONS.items() if v["type"] == "looming_wind"]
+        wind = [(f"W{lv}", side) for lv in LV_GRID_SOAS_MS for side in ("left", "right")]
+
+        def lv_of(x: tuple) -> int:
+            return LV_GRID_CONDITIONS[x[0]]["lv_ratio_ms"]
+
+        def side_of(x: tuple) -> str:
+            return x[1]
+
+        def imbalance(items: list) -> int:
+            return abs(sum(1 if side == "left" else -1 for _, side in items))
+
+        for _ in range(5000):
+            cells = looming[:]
+            rng.shuffle(cells)
+            sess: List[list] = [list(wind), [], []]
+            for cell, (a, b) in zip(cells, [(0, 1)] * 6 + [(0, 2)] * 6 + [(1, 2)] * 4):
+                first = rng.choice(["left", "right"])
+                sess[a].append((cell, first))
+                sess[b].append((cell, flip[first]))
+            side_120 = rng.choice(["left", "right"])
+            small, big = ("V60", "V180") if rng.random() < 0.5 else ("V180", "V60")
+            vis_side = {"V60": v60, "V180": v180}
+            sess[1] += [("V120", side_120), (small, vis_side[small])]
+            sess[2] += [("V120", flip[side_120]), (big, vis_side[big])]
+            if any(imbalance(it) for it in sess):
+                continue
+            try:
+                ordered = [cls._constrained_order(it, [side_of, lv_of], rng) for it in sess]
+            except RuntimeError:
+                continue
+            assert [len(o) for o in ordered] == list(LV_GRID_SESSION_SIZES)
+            return plan_seed, idx, ordered
+        raise RuntimeError(f"No {LV_GRID_PATTERN} plan satisfies the constraints for {subject_id!r}")
+
     @staticmethod
     def _constrained_order(items: list, keys: list, rng: random.Random, max_run: int = 2) -> list:
         """Random order where no key repeats more than max_run times in a row.
@@ -648,14 +779,24 @@ class LoomingParadigm(BaseParadigm):
             prev = d
         return best
 
+    def _trial_lv_s(self, trial_context: dict) -> float:
+        """l/v in seconds; a labelled condition without l/v is an error, not 120."""
+        lv = trial_context.get("lv_ratio_ms")
+        if lv is None:
+            if "condition" in trial_context:
+                raise ValueError(f"trial {trial_context['condition']!r} has no lv_ratio_ms")
+            lv = self.LV_RATIO_MS
+        return lv / 1000.0
+
     def prepare_trial(self, trial_context: dict) -> str:
         # 强制静默期：刺激结束后继续录制，确保数据窗口完整
         self._post_delay = random.uniform(1.5, 2.5)
+        self._trial_lv_s(trial_context)  # 带 condition 标签却缺 l/v 的试次在此报错
         if trial_context["type"] == "looming_wind":
             wind_dir = trial_context.get("wind_dir", "none")
             if wind_dir == "none":
                 return ""
-            lv_s = trial_context.get("lv_ratio_ms", self.LV_RATIO_MS) / 1000.0
+            lv_s = self._trial_lv_s(trial_context)
             t_col_s = self._collision_time_s(lv_s, self.init_deg)
             delay_ms = max(
                 0, int(round(t_col_s * 1000)) + trial_context["target_ttc_ms"]
@@ -664,7 +805,7 @@ class LoomingParadigm(BaseParadigm):
             return f"<{dir_char},{delay_ms}>"
         elif trial_context["type"] == "baseline_wind":
             # 使用 looming 同一 l/v 计算等效静默期（试次带 l/v 时按试次）
-            lv_s = (trial_context.get("lv_ratio_ms") or self.LV_RATIO_MS) / 1000.0
+            lv_s = self._trial_lv_s(trial_context)
             t_col_s = self._collision_time_s(lv_s, self.init_deg)
 
             # baseline_delay 严格对齐 looming 的前导时间 (约 6.88秒)
@@ -739,7 +880,7 @@ class LoomingParadigm(BaseParadigm):
         wind_active = 0
 
         if t_type in ["looming_wind", "baseline_visual"]:
-            lv_s = trial_context.get("lv_ratio_ms", self.LV_RATIO_MS) / 1000.0
+            lv_s = self._trial_lv_s(trial_context)
             t_col = self._collision_time_s(lv_s, self.init_deg)
             freeze_ms = trial_context.get("freeze_ttc_ms")
 
