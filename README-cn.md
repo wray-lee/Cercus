@@ -46,7 +46,7 @@ python main.py
 
 刷板后、每次开采前，手动跑一个 W180 测试 arm（delay 10312 ms），确认阀门确实动作了再开始。旧固件会丢弃这个值，所以它同时能验证新固件是否已刷上。
 
-每条风命令都会记为 `wind_cmd_queued` 事件（字段 `cmd`、`dir`、`delay_ms`；`timestamp` 为交给串口线程发送队列的时刻（试次时钟）；队列满时命令会被静默丢弃），可逐试次核对 arm 到 T0 是否小于固件的 15 s `ARM_TIMEOUT_MS`。
+每条风命令都会记为 `wind_cmd_queued` 事件（字段 `cmd`、`dir`、`delay_ms`；`timestamp` 为交给串口线程发送队列的时刻（试次时钟）；队列满时命令会被静默丢弃），用于逐试次核对实际发出的延时。固件的 15 s `ARM_TIMEOUT_MS` 只管 arm 到 photodiode T0 这一段（loom 或 baseline 的第一帧就点亮同步方块，所以约等于试次第一个 `phase_transition` 之后一帧）；T0 之后的 `DELAY_MS` 倒计时没有超时。
 
 ## 3. 内置实验范式
 

@@ -46,7 +46,7 @@ The firmware silently drops any `<DIR,DELAY_MS>` whose delay exceeds its `MAX_DE
 
 After flashing the board, and before each acquisition, manually run a W180 test arm (delay 10312 ms) and confirm the valve actually fires before starting. Older firmware drops this value, so the check also confirms the new firmware is flashed.
 
-Every wind command is recorded as a `wind_cmd_queued` event (`cmd`, `dir`, `delay_ms`; `timestamp` is the time it was queued for the serial daemon, on the trial clock), for checking per trial that arm-to-T0 stayed under the firmware's 15 s `ARM_TIMEOUT_MS`.
+Every wind command is recorded as a `wind_cmd_queued` event (`cmd`, `dir`, `delay_ms`; `timestamp` is the time it was queued for the serial daemon, on the trial clock), for per-trial auditing of the delay actually sent. The firmware's 15 s `ARM_TIMEOUT_MS` covers only arm-to-photodiode-T0 (about one frame after the trial's first `phase_transition`, since the loom or baseline starts lighting the sync marker on its first frame); the `DELAY_MS` countdown after T0 has no timeout.
 
 ## 3. Built-in Paradigms
 
