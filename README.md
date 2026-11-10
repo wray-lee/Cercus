@@ -40,6 +40,14 @@ python main.py
 
 The native dashboard window opens automatically. A read-only monitor is available at `http://<your-ip>:8000/monitor` from any browser on the LAN.
 
+### Before every acquisition: valve check
+
+The firmware silently drops any `<DIR,DELAY_MS>` whose delay exceeds its `MAX_DELAY_MS` (60000 ms), so the valve does nothing and no error comes back. `FIRMWARE_MAX_DELAY_MS` in `src/workers/stimulus_worker.py` must equal the firmware value; a session containing a longer delay is refused at start with `Preflight failed: ...`.
+
+After flashing the board, and before each acquisition, manually run a W180 test arm (delay 10312 ms) and confirm the valve actually fires before starting. Older firmware drops this value, so the check also confirms the new firmware is flashed.
+
+Every wind command is recorded as a `wind_cmd_queued` event (`cmd`, `dir`, `delay_ms`; `timestamp` is the time it was queued for the serial daemon, on the trial clock), for checking per trial that arm-to-T0 stayed under the firmware's 15 s `ARM_TIMEOUT_MS`.
+
 ## 3. Built-in Paradigms
 
 The following paradigms are built-in and can be dynamically loaded via the dashboard dropdown:

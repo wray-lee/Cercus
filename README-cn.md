@@ -40,6 +40,14 @@ python main.py
 
 本地桌面窗口自动打开。只读监控页面可从局域网内任意浏览器访问 `http://<你的IP>:8000/monitor`。
 
+### 每次开采前：阀门检查
+
+固件会静默丢弃延时超过 `MAX_DELAY_MS`（60000 ms）的 `<DIR,DELAY_MS>` 命令：阀门不动作，也不会有任何报错。`src/workers/stimulus_worker.py` 里的 `FIRMWARE_MAX_DELAY_MS` 必须与固件取值一致；session 内只要有更长的延时，开始时就会被拒绝，报 `Preflight failed: ...`。
+
+刷板后、每次开采前，手动跑一个 W180 测试 arm（delay 10312 ms），确认阀门确实动作了再开始。旧固件会丢弃这个值，所以它同时能验证新固件是否已刷上。
+
+每条风命令都会记为 `wind_cmd_queued` 事件（字段 `cmd`、`dir`、`delay_ms`；`timestamp` 为交给串口线程发送队列的时刻（试次时钟）；队列满时命令会被静默丢弃），可逐试次核对 arm 到 T0 是否小于固件的 15 s `ARM_TIMEOUT_MS`。
+
 ## 3. 内置实验范式
 
 以下范式已内置，可通过主控面板下拉菜单动态装载：

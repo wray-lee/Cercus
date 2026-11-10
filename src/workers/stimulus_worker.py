@@ -1,6 +1,7 @@
 import multiprocessing as mp
 import queue
 import random
+import re
 import signal
 import threading
 import time
@@ -18,6 +19,12 @@ from src.models.paradigm import PARADIGM_REGISTRY
 adaption_duration: float = 3.0  # seconds
 initial_baseline_dur: float = 2.0
 ABORT_KEY = "0"
+
+# MUST equal the firmware's MAX_DELAY_MS (hardware/src/main.cpp). The firmware
+# silently drops a `<DIR,DELAY_MS>` whose DELAY_MS exceeds it: the valve never
+# fires and nothing is reported back, so the session is refused up front instead.
+FIRMWARE_MAX_DELAY_MS: int = 60000
+_WIND_CMD = re.compile(r"<([A-Za-z]+),(\d+)>")
 
 _shutdown_event = threading.Event()
 
@@ -270,6 +277,42 @@ class GenericWorker:
         payload.update(data)
         return payload
 
+    def _preflight_wind_delays(self, trials: List[Dict[str, Any]]) -> None:
+        """Refuse the session if any trial's wind delay exceeds the firmware limit."""
+        # prepare_trial draws from the global RNGs; restore them so the
+        # preflight doesn't shift post-stimulus delays for a given seed.
+        rng_state, np_state = random.getstate(), numpy.random.get_state()
+        try:
+            over = []
+            for i, trial in enumerate(trials, 1):
+                m = _WIND_CMD.fullmatch(self.paradigm.prepare_trial(trial) or "")
+                if m and int(m[2]) > FIRMWARE_MAX_DELAY_MS:
+                    over.append(f"trial {i} ({trial.get('condition') or trial.get('type')}): {m[2]} ms")
+        finally:
+            random.setstate(rng_state)
+            numpy.random.set_state(np_state)
+        if over:
+            raise ValueError(
+                f"Preflight failed: {len(over)} trial(s) have a wind delay above the "
+                f"firmware limit MAX_DELAY_MS={FIRMWARE_MAX_DELAY_MS} ms "
+                f"(the firmware would silently drop the command): {'; '.join(over[:3])}"
+                f"{' ...' if len(over) > 3 else ''}. Session not started."
+            )
+
+    @staticmethod
+    def _send_wind_cmd(hw_daemon: Any, logger: GroundTruthLogger, clock: Any, cmd: str) -> None:
+        """Queue `<DIR,DELAY_MS>` for the serial daemon and log it, for per-trial audit.
+
+        send_command drops silently when its queue is full, so this proves the
+        host issued the command, not that it reached the wire.
+        """
+        hw_daemon.send_command(cmd)
+        m = _WIND_CMD.fullmatch(cmd)
+        logger.log_event(
+            "wind_cmd_queued", clock.getTime(),
+            cmd=cmd, dir=m[1] if m else None, delay_ms=int(m[2]) if m else None,
+        )
+
     def _present(
         self,
         renderer: CoreRenderer,
@@ -345,6 +388,7 @@ class GenericWorker:
             trials = self.paradigm.generate_trials(
                 self.config["Experiment Pattern"]
             )
+            self._preflight_wind_delays(trials)
             logger.open_session(
                 self.config.get("Subject ID"),
                 first_session_num,
@@ -414,6 +458,7 @@ class GenericWorker:
                     trials = self.paradigm.generate_trials(
                         self.config["Experiment Pattern"]
                     )
+                    self._preflight_wind_delays(trials)
                     logger.open_session(
                         self.config.get("Subject ID"),
                         current_session,
@@ -554,7 +599,7 @@ class GenericWorker:
                     hw_daemon.flush_input()
                     t_trial = clock.getTime()
                     if init_cmd:
-                        hw_daemon.send_command(init_cmd)
+                        self._send_wind_cmd(hw_daemon, logger, clock, init_cmd)
 
                     # 状态追踪器初始化
                     current_phase = "TrialStart"
@@ -583,7 +628,7 @@ class GenericWorker:
                             current_phase = new_phase
 
                         if tel.get("hw_cmd"):
-                            hw_daemon.send_command(tel["hw_cmd"])
+                            self._send_wind_cmd(hw_daemon, logger, clock, tel["hw_cmd"])
 
                         self._present(renderer, cmds)
                         self._push_telemetry_debounced(
