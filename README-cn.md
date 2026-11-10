@@ -44,7 +44,7 @@ python main.py
 
 固件会静默丢弃延时超过 `MAX_DELAY_MS`（60000 ms）的 `<DIR,DELAY_MS>` 命令：阀门不动作，也不会有任何报错。`src/workers/stimulus_worker.py` 里的 `FIRMWARE_MAX_DELAY_MS` 必须与固件取值一致；session 内只要有更长的延时，开始时就会被拒绝，报 `Preflight failed: ...`。
 
-刷板后、每次开采前，手动跑一个 W180 测试 arm（delay 10312 ms），确认阀门确实动作了再开始。旧固件会丢弃这个值，所以它同时能验证新固件是否已刷上。
+刷板后、每次开采前，在仓库根目录用 psychopy 环境运行 `python .scratch/w180-valve-check/run_w180.py <串口> tmp/w180-check`。它在真实屏幕和阀门上跑两个纯风试次：W100（delay 5729 ms，对照）和 W180（delay 10312 ms），两个都必须报 `valve ON`。W180 在旧固件（上限 10000 ms）下会被丢弃，所以它同时能验证新固件是否已刷上；若 W100 就不出风，则是串口、photodiode 或阀门链路的问题。
 
 每条风命令都会记为 `wind_cmd_queued` 事件（字段 `cmd`、`dir`、`delay_ms`；`timestamp` 为交给串口线程发送队列的时刻（试次时钟）；队列满时命令会被静默丢弃），用于逐试次核对实际发出的延时。固件的 15 s `ARM_TIMEOUT_MS` 只管 arm 到 photodiode T0 这一段（loom 或 baseline 的第一帧就点亮同步方块，所以约等于试次第一个 `phase_transition` 之后一帧）；T0 之后的 `DELAY_MS` 倒计时没有超时。
 
